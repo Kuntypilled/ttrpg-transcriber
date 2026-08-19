@@ -47,21 +47,90 @@ python3 -c "import gi; gi.require_version('Gtk','3.0'); from gi.repository impor
 ## 3. Python packages
 
 ```
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-```
-
-A venv is the clean option but it complicates the GTK side, because PyGObject lives in
-system Python and a plain venv cannot see it. Two ways out: create the venv with
-`--system-site-packages`, or skip the venv and install for your user:
-
-```
 pip install --user --break-system-packages -r requirements.txt
 ```
 
-The `--break-system-packages` flag is required on distributions that mark system Python as
-externally managed (PEP 668). It is less alarming than it sounds: it installs into your own
-`~/.local`, not into the system tree.
+Install for your user rather than into a virtual environment. This is not the usual advice,
+and the reason is specific to this tool: `launch_transcriber.sh` and the `.desktop` entry
+both invoke `python3` directly. A virtual environment only exists while it is activated in a
+shell, so a GUI started from your application launcher would run system Python, fail to
+import chromadb, and write the error to a log file you would then have to go find. Making a
+venv work means pointing the launcher and the desktop entry at `.venv/bin/python3` too,
+which is real complexity for no benefit on a machine that runs one tool.
+
+Installing for your user is also what makes the GUI work at all. PyGObject is a system
+package living in system Python. A plain venv cannot see it, so `transcribe_gui.py` fails to
+`import gi` from inside one.
+
+`--break-system-packages` is required on distributions that mark system Python as externally
+managed (PEP 668). It is less alarming than it sounds: it installs into your own `~/.local`,
+not into the system tree.
+
+Verify both halves before moving on. The second command is the one that matters for the GUI,
+and it only passes because you are using system Python:
+
+```
+python3 -c "import chromadb, sentence_transformers; print('deps ok')"
+python3 -c "import gi; gi.require_version('Gtk','3.0'); from gi.repository import Gtk; print('GTK3 ok')"
+```
+
+pip drops console scripts into `~/.local/bin`, which is frequently not on PATH. If the
+install ends in a pile of "installed in ... which is not on PATH" warnings:
+
+```
+fish_add_path ~/.local/bin                    # fish, persists on its own
+export PATH="$HOME/.local/bin:$PATH"          # bash or zsh, add to your rc file
+```
+
+### Torch drags in a CUDA stack you probably do not want
+
+`sentence-transformers` depends on `torch`, and the default PyPI wheel bundles the NVIDIA
+runtime. On one CachyOS install this was 17 CUDA packages totalling 2.14 GB of downloads on
+top of torch's own 527 MB, about 2.7 GB in wheels and more once unpacked. On an AMD or Intel
+GPU, or anywhere embeddings run on CPU, not one byte of it is ever loaded.
+
+Avoid it by installing the CPU-only build first, so the resolver finds the dependency already
+satisfied when it reaches `sentence-transformers`:
+
+```
+pip install --user --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+pip install --user --break-system-packages -r requirements.txt
+```
+
+Check that index URL against the installer selector on pytorch.org rather than trusting this
+file, and check a wheel exists for your Python version.
+
+If you already installed the CUDA build and want the space back, replace torch first and
+remove the orphans second. That order is not optional: uninstalling the NVIDIA packages while
+the CUDA build of torch is installed breaks `import torch`.
+
+```
+pip install --user --break-system-packages --force-reinstall --no-deps torch \
+  --index-url https://download.pytorch.org/whl/cpu
+
+pip list --format=freeze | grep '^nvidia-' | cut -d= -f1 > /tmp/nvidia-orphans.txt
+pip uninstall -y --break-system-packages -r /tmp/nvidia-orphans.txt
+pip uninstall -y --break-system-packages triton cuda-toolkit cuda-bindings cuda-pathfinder
+```
+
+Then re-run the two verification commands above. `import torch` has to still work.
+
+### If you use a virtual environment anyway
+
+Source the activation script that matches your shell. `.venv/bin/activate` is a POSIX shell
+script and fish cannot parse it; the error is `'case' builtin not inside of switch block`.
+
+```
+source .venv/bin/activate.fish      # fish
+. .venv/bin/activate                # bash, zsh
+```
+
+Create it with `--system-site-packages` so the GTK bindings stay visible, and remember the
+launcher caveat above still applies:
+
+```
+python3 -m venv --system-site-packages .venv
+```
 
 ## 4. whisper.cpp
 
@@ -154,6 +223,10 @@ python3 campaign.py doctor
 ```
 
 Prints every resolved root, whether it exists, and which of the three sources it came from.
+
+If `campaign.py doctor` reports command not found for anything it shells out to, check that
+`~/.local/bin` is on PATH. See section 3.
+
 Then:
 
 ```
@@ -162,6 +235,8 @@ Then:
 
 Checks `whisper-cli`, `ffmpeg`, `jq`, the model and the alias file, and prints the install
 command for whichever package manager it finds on this machine.
+
+
 
 ## 9. Desktop entry, optional
 
