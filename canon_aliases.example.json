@@ -1,0 +1,66 @@
+{
+    "_comment": "Single source of truth for one campaign. Feeds (1) the whisper.cpp --prompt seed, (2) the chunker's cleanup pass, (3) speaker attribution, (4) the alias-candidate report. Copy this file to <vault>/<campaigns_subdir>/<your_campaign>/canon_aliases.json and edit. The folder name is the campaign's identity; the 'campaign' field below is only a display label. Everything here is invented. Nothing in this file is real.",
+
+    "campaign": "Emberfall",
+    "world": "emberfall",
+    "system": "daggerheart",
+
+    "seed_prompt": "A Daggerheart tabletop session. Characters: Vashti Corrow, Bram Ollander, Nell, Kestrel Vane. Names and places: Emberfall, Thornwake, the Cinder Road, Marrow Hall, House Sable.",
+
+    "aliases": {
+        "_comment": "SAFE substitutions, auto-applied by the chunker. A variant belongs here only if it is not also a real English word in ordinary use. When in doubt, put it in review_only instead: a wrong entry here silently corrupts the transcript, a wrong entry there only costs you a second of reading.",
+        "Vashti Corrow":   ["Vashty Corrow", "Vashtee Corrow", "Vashti Carrow"],
+        "Bram Ollander":   ["Bram Olander", "Brahm Ollander"],
+        "Kestrel Vane":    ["Kestral Vane", "Kestrel Vayne"],
+        "Thornwake":       ["Thorn Wake", "Thornwaik", "Thornwaike"],
+        "Emberfall":       ["Ember Fall", "Emberfal"]
+    },
+
+    "review_only": {
+        "_comment": "Manglings that collide with real English words. NEVER auto-replace. These are surfaced in the recap pass for a human call. Auto-replacing them would destroy a transcript quietly, which is the worst way for a tool to fail: the session is full of legitimate uses of 'borrow', 'vain' and 'narrow'.",
+        "Corrow":   ["borrow", "sorrow"],
+        "Vane":     ["vain", "vein"],
+        "Ollander": ["all under", "oleander"],
+        "Marrow":   ["narrow", "morrow"],
+        "Nell":     ["nail", "knell"],
+        "Sable":    ["stable", "table"]
+    },
+
+    "names": [
+        "Vashti Corrow", "Bram Ollander", "Nell", "Kestrel Vane",
+        "Emberfall", "Thornwake", "Cinder Road", "Marrow Hall", "House Sable"
+    ],
+
+    "pc_nicknames": {
+        "_comment": "Optional. In-character nicknames the party uses for each other. Helps the seed prompt and the alias-candidate report. Delete this key if your table does not do this.",
+        "Vashti Corrow": ["Vash"],
+        "Kestrel Vane":  ["Kes"]
+    },
+
+    "discord_names": {
+        "_comment": "Maps a raw Craig Discord username to player and character. Keys are the audio filename stem after stripping the leading N- prefix and the trailing _M index, so '2-someuser_0.flac' looks up 'someuser'. The GUI offers to append unknown speakers here after a run. character is null for the GM.",
+        "someuser":      {"player": "Alex",   "character": "Vashti Corrow", "role": "Player"},
+        "anotheruser":   {"player": "Sam",    "character": "Bram Ollander", "role": "Player"},
+        "thirduser":     {"player": "Riley",  "character": "Nell",          "role": "Player"},
+        "fourthuser":    {"player": "Jordan", "character": "Kestrel Vane",  "role": "Player"},
+        "gmuser":        {"player": "Casey",  "character": null,            "role": "GM"}
+    },
+
+    "speaker_map": [
+        {"_comment": "Transcript speaker label -> player/character. 'match' is compared case-insensitively as a SUBSTRING of the label, and ORDER MATTERS because the first match wins. Put the most specific match first. character null means the GM, whose lines are attributed but not counted as a PC."},
+        {"match": "vashti",  "player": "Alex",   "character": "Vashti Corrow"},
+        {"match": "corrow",  "player": "Alex",   "character": "Vashti Corrow"},
+        {"match": "bram",    "player": "Sam",    "character": "Bram Ollander"},
+        {"match": "nell",    "player": "Riley",  "character": "Nell"},
+        {"match": "kestrel", "player": "Jordan", "character": "Kestrel Vane"},
+        {"match": "gm",      "player": "Casey",  "character": null}
+    ],
+
+    "players": {
+        "_comment": "Character -> player. Key ORDER defines the order of the has_<PC> fields in chunk metadata, so do not reorder these without knowing that you are changing the shape of every chunk written afterwards.",
+        "Vashti Corrow": "Alex",
+        "Bram Ollander": "Sam",
+        "Nell":          "Riley",
+        "Kestrel Vane":  "Jordan"
+    }
+}

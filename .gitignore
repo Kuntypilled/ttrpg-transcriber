@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Runtime logs and state. The log moved to $XDG_STATE_HOME, but an old
+# in-tree log can still exist in a checkout upgraded in place.
+*.log
+transcriptions/
+transcription_log.csv
+transcription_state.csv
+
+# Real campaign configuration. canon_aliases.json holds players' real names and
+# Discord handles, and it belongs in the vault, not in this repository. The only
+# alias file that is tracked here is canon_aliases.example.json.
+canon_aliases.json
+config.json
+
+# Local overrides
+.env
+*.local
