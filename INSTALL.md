@@ -15,7 +15,8 @@ anywhere. There is no install step and nothing is copied into place.
 
 ## 2. System packages
 
-Three things are not pip-installable.
+Three things are not pip-installable: `ffmpeg`, `jq`, and the GTK3 Python bindings.
+`whisper-cli` is a fourth, covered separately in section 4.
 
 `ffmpeg` and `jq` are spelled the same on every distribution.
 
@@ -29,8 +30,12 @@ Only `transcribe_gui.py` needs it. The three command-line stages run without it.
 | Arch, CachyOS, EndeavourOS | `sudo pacman -S --needed ffmpeg jq python-gobject gtk3` |
 | Fedora, RHEL | `sudo dnf install ffmpeg jq python3-gobject gtk3` |
 
-The Debian row is the one this tool was developed against. The others follow each family's
-usual naming. If a name is wrong on your system, find the right one rather than guessing:
+On a stock CachyOS install the GTK3 bindings were already present and the import check
+below passed without installing anything, so the Arch row may be a no-op for you. `ffmpeg`
+also arrives as a dependency of `whisper-cpp`. Run it anyway; `--needed` makes it harmless.
+
+The Debian row is the one this tool was originally developed against. If a package name is
+wrong on your system, find the right one rather than guessing:
 
 ```
 pacman -Ss gobject          # Arch
@@ -134,23 +139,78 @@ python3 -m venv --system-site-packages .venv
 
 ## 4. whisper.cpp
 
-`whisper-cli` has to be on `$PATH`. The Vulkan backend is what this was developed against.
-CUDA, ROCm, Metal and plain CPU all work identically as far as this tool is concerned,
-because it only ever shells out to the binary.
+`whisper-cli` has to be on `$PATH`. This tool only ever shells out to that binary, so which
+GPU backend it was compiled against is whisper.cpp's business and not this project's. Vulkan
+is what the pipeline was developed on. CUDA, ROCm, SYCL, Metal and plain CPU all behave
+identically from here, only slower or faster.
+
+### Arch, CachyOS, EndeavourOS: install it, do not build it
+
+Arch splits this across two packages, and the split is the useful part. `whisper-cpp` links
+against a shared `ggml`, and the GPU backend is decided by which `ggml-*` backend package is
+installed. You choose the backend without compiling anything.
 
 ```
-git clone https://github.com/ggml-org/whisper.cpp
-cd whisper.cpp
+sudo pacman -S ggml-vulkan whisper-cpp
+```
+
+Pick the backend that matches your hardware:
+
+| Hardware | Package | Installed |
+|---|---|---|
+| AMD or Intel GPU, anything with a Vulkan driver | `ggml-vulkan` | 52 MiB |
+| NVIDIA | `ggml-cuda` | 141 MiB |
+| AMD via ROCm | `ggml-hip` | 1.17 GiB |
+| CPU only | `ggml-cpu` | 13 MiB |
+
+Vulkan is the right default on AMD. ROCm can be faster on the cards it supports, and costs
+twenty times the disk for the chance, with real hardware compatibility caveats. Start with
+Vulkan and only reach for `ggml-hip` if throughput turns out to matter more than simplicity.
+
+`ggml` is the core runtime and gets pulled in automatically. The backends are separate and
+co-installable, listed as optional dependencies of `ggml`, so adding a second one later is
+another `pacman -S` rather than a rebuild.
+
+CachyOS additionally ships microarchitecture-optimised rebuilds of both. If your repositories
+carry them, `cachyos-extra-znver4/whisper-cpp` and `cachyos-extra-znver4/ggml-vulkan` are the
+same packages built for a newer instruction set.
+
+Then confirm the binary is named what the scripts expect:
+
+```
+which whisper-cli
+```
+
+`transcribe.sh` looks for `whisper-cli` on `$PATH`. The Arch package installs it to
+`/usr/bin/whisper-cli`.
+
+### Everywhere else: build it
+
+```
+git clone https://github.com/ggml-org/whisper.cpp ~/src/whisper.cpp
+cd ~/src/whisper.cpp
 cmake -B build -DGGML_VULKAN=1
-cmake --build build -j$(nproc) --config Release
+cmake --build build -j"$(nproc)" --config Release
 sudo install -Dm755 build/bin/whisper-cli /usr/local/bin/whisper-cli
 ```
 
-Those flags are upstream's, from the Vulkan section of the whisper.cpp README. Swap
-`-DGGML_VULKAN=1` for the flag matching your backend if Vulkan is not what you want.
+Clone it somewhere outside this repository. It is 44 MB and 41,000 objects, and a nested
+checkout inside a tracked working tree is a nuisance to unpick afterwards.
 
-On Arch and derivatives a `whisper.cpp-vulkan` package exists in the AUR and may save you
-the build. Read the PKGBUILD before installing it, as with anything from the AUR.
+In fish, write `-j(nproc)`. Fish uses bare parentheses for command substitution.
+
+You need a C++ toolchain, `cmake`, the Vulkan headers, and `glslc`, the Vulkan shader
+compiler. On Arch that is `base-devel cmake vulkan-headers vulkan-icd-loader shaderc`; find
+the equivalents for your distribution rather than assuming those names travel. `glslc` is the
+one people miss: ggml's Vulkan backend compiles its shaders during the build and fails
+partway through without it, with an error that never mentions the shader compiler.
+
+You also need a Vulkan driver at runtime regardless of how you got the binary. On AMD with
+Mesa that is `vulkan-radeon`. `vulkaninfo | head` failing to find a device is how you learn
+it is missing.
+
+Those cmake flags are upstream's, from the Vulkan section of the whisper.cpp README. Swap
+`-DGGML_VULKAN=1` for the flag matching your backend if Vulkan is not what you want.
 
 ## 5. The model
 
@@ -164,6 +224,10 @@ Or, from a whisper.cpp checkout, `./models/download-ggml-model.sh large-v3-turbo
 
 `large-v3-turbo` is roughly 1.5 GiB. Override the path with `--model /some/other.bin` if
 you keep models elsewhere.
+
+Arch users will find `whisper.cpp-model-*` packages in the AUR. Skip them. They install to a
+system path this tool does not look in, so you would end up passing `--model` anyway, and the
+download is the same file from the same place.
 
 ## 6. Point it at your vault
 

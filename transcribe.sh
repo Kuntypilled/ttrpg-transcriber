@@ -235,8 +235,9 @@ check_dependencies() {
     else
         echo "  [MISSING] $WHISPER_BIN"
         if command -v pacman &>/dev/null; then
-            echo "            On Arch, an AUR package may save you the build:"
-            echo "              whisper.cpp-vulkan   (confirm it exists and read the PKGBUILD first)"
+            echo "            On Arch, install it rather than building:"
+            echo "              sudo pacman -S ggml-vulkan whisper-cpp"
+            echo "            Swap ggml-vulkan for ggml-cuda, ggml-hip or ggml-cpu to match your hardware."
             echo ""
         fi
         echo "            Or build it. Upstream is ggml-org/whisper.cpp:"
