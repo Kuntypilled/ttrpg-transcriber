@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Session Transcriber
+Comment=Transcribe a Craig multitrack recording of a tabletop session
+# Absolute path required: .desktop files do not expand ~ or $HOME.
+# Edit this to wherever you cloned the repository, then install with:
+#   install -Dm644 ttrpg-transcriber.desktop.example \
+#     ~/.local/share/applications/ttrpg-transcriber.desktop
+#   update-desktop-database ~/.local/share/applications
+Exec=/home/YOUR_USER/src/ttrpg-transcriber/launch_transcriber.sh
+Icon=audio-input-microphone
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+StartupNotify=true
