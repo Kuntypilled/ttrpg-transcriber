@@ -279,6 +279,7 @@ built-in default.
 | whisper scratch | `GM_WORK_ROOT` | `$XDG_CACHE_HOME/ttrpg_transcribe` |
 | campaigns folder | `GM_CAMPAIGNS_SUBDIR` | `0.2_campaigns` |
 | transcripts folder | `GM_TRANSCRIPTS_SUBDIR` | `08_transcripts` |
+| GPU device index | `GM_WHISPER_DEVICE` (or `--device N`) | unset; whisper-cli uses device 0 |
 | GUI log | `GM_TRANSCRIBER_LOG` | `$XDG_STATE_HOME/ttrpg-transcriber/transcribe_gui.log` |
 | config file | `GM_TRANSCRIBER_CONFIG` | `$XDG_CONFIG_HOME/ttrpg-transcriber/config.json` |
 

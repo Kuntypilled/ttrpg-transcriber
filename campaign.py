@@ -90,6 +90,8 @@ class CampaignError(Exception):
 CONFIG_ENV     = "GM_TRANSCRIBER_CONFIG"
 CONFIG_RELPATH = os.path.join("ttrpg-transcriber", "config.json")
 
+WHISPER_DEVICE_ENV = "GM_WHISPER_DEVICE"
+
 DEFAULT_CAMPAIGNS_SUBDIR   = "0.2_campaigns"
 DEFAULT_TRANSCRIPTS_SUBDIR = "08_transcripts"
 ALIASES_FILENAME           = "canon_aliases.json"
@@ -266,6 +268,29 @@ def chroma_root_source():
 def work_root_source():
     return _resolve("work_root", "GM_WORK_ROOT",
                     default=os.path.join(xdg_cache_home(), "ttrpg_transcribe"))
+
+
+def whisper_device_source():
+    """(device index, where it came from), or (None, None) to let whisper-cli choose.
+
+    This is whisper-cli's -dev N: the ggml device index, which is the number
+    ggml prints at startup ("ggml_vulkan: 1 = NVIDIA ..."). It matters on a
+    machine with more than one GPU, where index 0 is not always the fast one.
+    """
+    for src, val in ((f"${WHISPER_DEVICE_ENV}", os.environ.get(WHISPER_DEVICE_ENV)),
+                     (config_path(), config().get("whisper_device"))):
+        if val is None or val == "":
+            continue
+        try:
+            idx = int(str(val).strip())
+        except ValueError:
+            idx = -1
+        if idx < 0:
+            raise CampaignError(
+                f"whisper_device from {src} is {val!r}; it must be a whole number, "
+                f"0 or higher (the device index whisper-cli prints at startup).")
+        return idx, src
+    return None, None
 
 
 def audio_root():
@@ -708,6 +733,16 @@ def _cmd_doctor():
     row("audio root", *audio_root_source())
     row("chroma root", *chroma_root_source())
     row("work root", *work_root_source())
+    try:
+        dev, dev_src = whisper_device_source()
+    except CampaignError as exc:
+        print(f"{'whisper dev':<14} INVALID\n{'':<14} {exc}")
+    else:
+        if dev is None:
+            print(f"{'whisper dev':<14} not set (whisper-cli uses its own default, device 0)")
+        else:
+            print(f"{'whisper dev':<14} {dev}")
+            print(f"{'':<14} set    from {dev_src}")
     print()
 
     camps = list_campaigns()
@@ -727,6 +762,8 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="slug<TAB>label<TAB>system per campaign")
     sub.add_parser("doctor", help="show what every root resolved to, and from where")
+    sub.add_parser("whisper-device",
+                   help="print the configured whisper-cli device index, or nothing")
     pp = sub.add_parser("paths", help="shell-eval-able KEY=value path resolution")
     add_campaign_argument(pp)
     pp.add_argument("--session", type=int)
@@ -736,6 +773,10 @@ def main(argv=None):
             _cmd_list()
         elif a.cmd == "doctor":
             return _cmd_doctor()
+        elif a.cmd == "whisper-device":
+            dev, _ = whisper_device_source()
+            if dev is not None:
+                print(dev)
         else:
             _cmd_paths(a.campaign, a.session)
     except CampaignError as exc:

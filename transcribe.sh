@@ -60,6 +60,7 @@ set -euo pipefail
 
 DEFAULT_MODEL="${HOME}/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin"
 WHISPER_BIN="whisper-cli"
+WHISPER_DEVICE=""   # empty: ask campaign.py (GM_WHISPER_DEVICE / config), else whisper-cli's default
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 CAMPAIGN_PY="$SCRIPT_DIR/campaign.py"
@@ -107,6 +108,8 @@ Options:
                               in campaign mode, OUTPUT_FOLDER/temp otherwise)
   -m, --model PATH            Path to ggml model bin (default: ~/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin)
   -w, --whisper-bin NAME      whisper.cpp binary name or path (default: whisper-cli)
+  -d, --device N              GPU device index for whisper-cli -dev (default: the
+                              whisper_device setting, else whisper-cli's own default)
   -f, --force                 Re-transcribe already-processed files
   -p, --post-process-only     Skip transcription; re-run post-processing from archive
   -c, --cleanup               Remove temp/ directory after processing
@@ -154,6 +157,7 @@ while [[ $# -gt 0 ]]; do
         --temp-dir)             TEMP_DIR_OVERRIDE="$2"; shift 2 ;;
         -m|--model)             MODEL_PATH="$2";      shift 2 ;;
         -w|--whisper-bin)       WHISPER_BIN="$2";     shift 2 ;;
+        -d|--device)            WHISPER_DEVICE="$2";  shift 2 ;;
         -f|--force)             FORCE=true;           shift   ;;
         -p|--post-process-only) POST_PROCESS_ONLY=true; shift ;;
         -c|--cleanup)           CLEANUP=true;         shift   ;;
@@ -163,6 +167,19 @@ while [[ $# -gt 0 ]]; do
         *) echo "Unknown option: $1" >&2; usage ;;
     esac
 done
+
+# ── Whisper device ─────────────────────────────────────────────────────────────
+# --device wins; otherwise GM_WHISPER_DEVICE or the config file's whisper_device.
+# A bad value in the config is reported by `campaign.py doctor`, so a failure
+# here just means "not set".
+
+if [[ -z "$WHISPER_DEVICE" ]]; then
+    WHISPER_DEVICE="$(python3 "$CAMPAIGN_PY" whisper-device 2>/dev/null || true)"
+fi
+if [[ -n "$WHISPER_DEVICE" && ! "$WHISPER_DEVICE" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: --device / whisper_device must be a whole number, got '$WHISPER_DEVICE'." >&2
+    exit 1
+fi
 
 # ── Campaign Resolution ────────────────────────────────────────────────────────
 # campaign.py owns the path rules. Asking it keeps them out of this script.
@@ -239,6 +256,12 @@ check_dependencies() {
 
     if command -v "$WHISPER_BIN" &>/dev/null; then
         echo "  [OK] $WHISPER_BIN found: $(command -v "$WHISPER_BIN")"
+        if [[ -n "$WHISPER_DEVICE" ]]; then
+            echo "  [OK] GPU device index: $WHISPER_DEVICE (whisper-cli -dev)"
+        else
+            echo "  [..] GPU device: not set, whisper-cli uses its default (device 0)."
+            echo "       On a machine with two GPUs that may be the slow one. See INSTALL.md."
+        fi
     else
         echo "  [MISSING] $WHISPER_BIN"
         if command -v pacman &>/dev/null; then
@@ -499,6 +522,7 @@ transcribe_file() {
     # that silence hallucination does not creep back. Test on one track first.
     local whisper_args=(-m "$MODEL_PATH" -l en -of "$TEMP_DIR/${basename}" -oj -mc 0)
     [[ -n "$WHISPER_PROMPT" ]] && whisper_args+=(--prompt "$WHISPER_PROMPT")
+    [[ -n "$WHISPER_DEVICE" ]] && whisper_args+=(-dev "$WHISPER_DEVICE")
 
     if "$WHISPER_BIN" "${whisper_args[@]}" "$wav_file" 2>> "$LOG_FILE"; then
 

@@ -333,6 +333,7 @@ python3 campaign.py paths --campaign emberfall --session 17
 | `GM_AUDIO_ROOT` | `~/.local/share/ttrpg_audio` | Craig recordings |
 | `GM_CHROMA_ROOT` | `~/.local/share/ttrpg_memory` | vector stores |
 | `GM_WORK_ROOT` | `~/.cache/ttrpg_transcribe` | Whisper intermediates |
+| `GM_WHISPER_DEVICE` | unset (whisper-cli uses device 0) | GPU index passed as `-dev N` |
 | `TTRPG_DB` | unset | overrides the resolved DB path |
 | `TTRPG_EMBED` | `BAAI/bge-base-en-v1.5` | embedding model |
 
