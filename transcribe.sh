@@ -192,7 +192,8 @@ if [[ -z "$INPUT_FOLDER" ]] && ! $CHECK_ONLY && ! $POST_PROCESS_ONLY; then
     usage
 fi
 
-if [[ -n "$INPUT_FOLDER" && ! -d "$INPUT_FOLDER" ]] && ! $POST_PROCESS_ONLY; then
+# --check only inspects dependencies and config, so a missing audio folder is not an error.
+if [[ -n "$INPUT_FOLDER" && ! -d "$INPUT_FOLDER" ]] && ! $POST_PROCESS_ONLY && ! $CHECK_ONLY; then
     echo "ERROR: Input folder does not exist: $INPUT_FOLDER" >&2
     exit 1
 fi
