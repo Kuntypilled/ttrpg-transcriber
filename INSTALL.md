@@ -161,7 +161,9 @@ Pick the backend that matches your hardware:
 | AMD or Intel GPU, anything with a Vulkan driver | `ggml-vulkan` | 52 MiB |
 | NVIDIA | `ggml-cuda` | 141 MiB |
 | AMD via ROCm | `ggml-hip` | 1.17 GiB |
-| CPU only | `ggml-cpu` | 13 MiB |
+
+There is no separate CPU package: the CPU backend is built into `ggml` itself, so with no GPU
+you install `whisper-cpp` alone and skip the backend.
 
 Vulkan is the right default on AMD. ROCm can be faster on the cards it supports, and costs
 twenty times the disk for the chance, with real hardware compatibility caveats. Start with
@@ -231,15 +233,29 @@ download is the same file from the same place.
 
 ## 6. Point it at your vault
 
-The vault root has no default, deliberately. There is no correct guess for where someone
-keeps their vault, and a wrong guess fails quietly: the campaign glob matches nothing, the
+The vault location has no default, deliberately. There is no correct guess for where someone
+keeps their vaults, and a wrong guess fails quietly: the campaign glob matches nothing, the
 dropdown comes up empty, and nothing tells you why.
 
-Either export it:
+There are two layouts. Pick the one that matches how your vaults are organised.
+
+**One vault per world** (a directory containing `<world>/0.2_campaigns/<campaign>/...`):
 
 ```
-export GM_VAULT=~/path/to/your/vault      # add to ~/.bashrc or ~/.zshrc to persist
+export GM_VAULTS_ROOT=~/vaults/ttrpg      # add to ~/.bashrc or ~/.zshrc to persist
 ```
+
+Campaigns are then addressed as `<world>/<campaign>`, e.g. `--campaign emberfall/main`, and
+the GUI lists every world's campaigns together. The world is part of the id so that two
+worlds can each have a campaign with the same name without sharing audio or vector stores.
+
+**One vault for everything:**
+
+```
+export GM_VAULT=~/path/to/your/vault
+```
+
+If both are set, `GM_VAULTS_ROOT` wins.
 
 Or write a config file, which the `.desktop` launcher can also see (a GUI launched from a
 desktop entry does not inherit your shell's environment, so the config file is the more
@@ -256,7 +272,8 @@ built-in default.
 
 | Setting | Env var | Default |
 |---|---|---|
-| vault | `GM_VAULT`, `VAULT` | none; unset is an error |
+| vaults root (one vault per world) | `GM_VAULTS_ROOT` | none |
+| vault (single) | `GM_VAULT`, `VAULT` | none; one of the two vault settings is required |
 | audio | `GM_AUDIO_ROOT` | `$XDG_DATA_HOME/ttrpg_audio` |
 | vector store | `GM_CHROMA_ROOT` | `$XDG_DATA_HOME/ttrpg_memory` |
 | whisper scratch | `GM_WORK_ROOT` | `$XDG_CACHE_HOME/ttrpg_transcribe` |
@@ -271,9 +288,10 @@ A campaign is any folder under the vault's campaigns directory containing a
 `canon_aliases.json`. That file is the entire registry.
 
 ```
-mkdir -p "$GM_VAULT/0.2_campaigns/my_campaign"
-cp canon_aliases.example.json "$GM_VAULT/0.2_campaigns/my_campaign/canon_aliases.json"
-$EDITOR "$GM_VAULT/0.2_campaigns/my_campaign/canon_aliases.json"
+# one vault per world: <vault> is $GM_VAULTS_ROOT/<world>; single vault: $GM_VAULT
+mkdir -p "<vault>/0.2_campaigns/my_campaign"
+cp canon_aliases.example.json "<vault>/0.2_campaigns/my_campaign/canon_aliases.json"
+$EDITOR "<vault>/0.2_campaigns/my_campaign/canon_aliases.json"
 ```
 
 Read the `_comment` fields in that file before editing. The `aliases` versus `review_only`

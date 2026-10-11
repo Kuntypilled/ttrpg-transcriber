@@ -12,8 +12,9 @@ Usage:
   transcript_to_chunks.py --campaign my_campaign --session 1 --report    # see below
 
 Paths default to the campaign's vault folder:
-  in   0.2_campaigns/<c>/08_transcripts/S<nn>/transcript.md
-  out  0.2_campaigns/<c>/08_transcripts/chunks/s<nn>_chunks.jsonl
+  in   <vault>/0.2_campaigns/<c>/08_transcripts/S<nn>/transcript.md
+  out  <vault>/0.2_campaigns/<c>/08_transcripts/chunks/s<nn>_chunks.jsonl
+(<vault> is the campaign's world vault; pass --campaign <world>/<c> with GM_VAULTS_ROOT)
 
 Speaker labels are read from the transcript. Character identity is resolved via
 the campaign's speaker_map (explicit, not inferred), so a change in Craig's

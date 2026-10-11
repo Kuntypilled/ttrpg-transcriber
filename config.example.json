@@ -1,6 +1,7 @@
 {
-    "_comment": "Copy to $XDG_CONFIG_HOME/ttrpg-transcriber/config.json (usually ~/.config/ttrpg-transcriber/config.json) and edit. Every key here is optional except 'vault', which has no default because there is no correct guess. Environment variables win over this file: GM_VAULT, GM_AUDIO_ROOT, GM_CHROMA_ROOT, GM_WORK_ROOT, GM_CAMPAIGNS_SUBDIR, GM_TRANSCRIPTS_SUBDIR. Run 'python3 campaign.py doctor' to see what resolved and where each value came from.",
+    "_comment": "Copy to $XDG_CONFIG_HOME/ttrpg-transcriber/config.json (usually ~/.config/ttrpg-transcriber/config.json) and edit. Set either 'vaults_root' (a directory holding one vault per world; campaigns become <world>/<campaign>) or 'vault' (a single vault). Neither has a default because there is no correct guess; if both are set, vaults_root wins. Every other key is optional. Environment variables win over this file: GM_VAULTS_ROOT, GM_VAULT, GM_AUDIO_ROOT, GM_CHROMA_ROOT, GM_WORK_ROOT, GM_CAMPAIGNS_SUBDIR, GM_TRANSCRIPTS_SUBDIR. Run 'python3 campaign.py doctor' to see what resolved and where each value came from.",
 
+    "vaults_root": "~/vaults",
     "vault": "~/my_vault",
 
     "audio_root":  "~/my_audio",

@@ -2,10 +2,21 @@
 """
 Campaign registry and path resolution for the session transcription pipeline.
 
-A campaign is any folder under $GM_VAULT/0.2_campaigns/ that contains a
+A campaign is any folder under a vault's 0.2_campaigns/ that contains a
 canon_aliases.json. That file is the whole registry. There is no second config
 to keep in sync, so adding a campaign means creating one folder with one JSON
 file and editing no Python.
+
+Two vault layouts are supported:
+
+  multi-vault   $GM_VAULTS_ROOT/<world>/0.2_campaigns/<c>/    one vault per world
+                campaign id is "<world>/<c>", e.g. "emberfall/main"
+  single vault  $GM_VAULT/0.2_campaigns/<c>/                  everything in one vault
+                campaign id is "<c>"
+
+If a vaults root is configured it wins. In multi-vault mode the world is part of
+the campaign id, so two worlds can each have a campaign called "main" without
+sharing audio, Chroma or work directories.
 
 Everything campaign-specific lives in that JSON:
 
@@ -23,11 +34,13 @@ Everything campaign-specific lives in that JSON:
 
 Paths this module owns:
 
-  transcripts   $GM_VAULT/<campaigns>/<c>/<transcripts>/S<nn>/
-  chunks        $GM_VAULT/<campaigns>/<c>/<transcripts>/chunks/s<nn>_chunks.jsonl
-  audio         $GM_AUDIO_ROOT/<c>/Session <n>          (outside the vault: large + binary)
-  chroma        $GM_CHROMA_ROOT/<c>/                    (outside the vault: binary + unsyncable)
-  work          $GM_WORK_ROOT/<c>/S<nn>/                (outside the vault: whisper intermediates)
+  transcripts   <vault>/<campaigns>/<c>/<transcripts>/S<nn>/
+  chunks        <vault>/<campaigns>/<c>/<transcripts>/chunks/s<nn>_chunks.jsonl
+  audio         $GM_AUDIO_ROOT/<id>/Session <n>         (outside the vault: large + binary)
+  chroma        $GM_CHROMA_ROOT/<id>/                   (outside the vault: binary + unsyncable)
+  work          $GM_WORK_ROOT/<id>/S<nn>/               (outside the vault: whisper intermediates)
+
+  <vault> is the world's vault in multi-vault mode; <id> is the campaign id above.
 
   <campaigns> defaults to 0.2_campaigns and <transcripts> to 08_transcripts.
   Both are overridable, so the tool does not require one person's vault layout.
@@ -41,6 +54,7 @@ CLI (used by transcribe.sh so path rules are not duplicated in bash):
 
   python3 campaign.py list
   python3 campaign.py paths --campaign my_campaign --session 13
+  python3 campaign.py paths --campaign emberfall/main --session 13     (multi-vault)
 """
 
 import glob
@@ -60,8 +74,12 @@ class CampaignError(Exception):
 #   2. the config file, $XDG_CONFIG_HOME/ttrpg-transcriber/config.json
 #   3. a built-in default, where a correct one exists
 #
-# The vault root has no built-in default, deliberately. There is no right guess
-# for where a person keeps their vault, and a wrong guess fails quietly: the
+# Where the vaults live is set by $GM_VAULTS_ROOT / "vaults_root" (a directory
+# holding one vault per world) or, for a single vault, $GM_VAULT / "vault".
+# If both are configured the vaults root wins.
+#
+# Neither has a built-in default, deliberately. There is no right guess
+# for where a person keeps their vaults, and a wrong guess fails quietly: the
 # campaign glob matches nothing, the dropdown comes up empty, and nothing says
 # why. An unconfigured vault raises with instructions instead.
 #
@@ -79,7 +97,11 @@ ALIASES_FILENAME           = "canon_aliases.json"
 UNCONFIGURED = (
     "No vault is configured, so there are no campaigns to find.\n"
     "\n"
-    "Set one of these:\n"
+    "One vault per world (a directory containing <world>/0.2_campaigns/...):\n"
+    "    export GM_VAULTS_ROOT=/path/to/vaults\n"
+    '    or put {"vaults_root": "/path/to/vaults"} in the config file\n'
+    "\n"
+    "One vault for everything:\n"
     "    export GM_VAULT=/path/to/your/vault\n"
     '    or put {"vault": "/path/to/your/vault"} in the config file\n'
     "\n"
@@ -158,7 +180,17 @@ def _setting(config_key, env_name, default):
     return os.environ.get(env_name) or config().get(config_key) or default
 
 
+def vaults_root_source():
+    """(path, source) of the directory holding one vault per world, or (None, None)."""
+    return _resolve("vaults_root", "GM_VAULTS_ROOT")
+
+
+def multi_vault():
+    return vaults_root_source()[0] is not None
+
+
 def vault_root_source():
+    """Single-vault root. Raises when unconfigured; use campaigns_dir_for in multi-vault mode."""
     path, src = _resolve("vault", "GM_VAULT", "VAULT")
     if not path:
         raise CampaignError(UNCONFIGURED)
@@ -169,6 +201,33 @@ def vault_root():
     return vault_root_source()[0]
 
 
+def split_slug(slug):
+    """(world, campaign) for a campaign id. world is None in single-vault mode.
+
+    In multi-vault mode the id must be exactly "<world>/<campaign>". Anything
+    else, including '..' segments, is rejected rather than resolved.
+    """
+    parts = str(slug).split("/")
+    if multi_vault():
+        if len(parts) != 2:
+            raise CampaignError(
+                f"'{slug}' is not a campaign id. Multi-vault mode expects "
+                f"<world>/<campaign>, e.g. emberfall/main.\n"
+                f"Run: python3 campaign.py list")
+        world, camp = parts
+    else:
+        if len(parts) != 1:
+            raise CampaignError(
+                f"'{slug}' is not a campaign id. Single-vault mode expects a bare "
+                f"campaign folder name. To use <world>/<campaign> ids, set "
+                f"GM_VAULTS_ROOT.")
+        world, camp = None, parts[0]
+    for part in (world, camp):
+        if part is not None and part in ("", ".", ".."):
+            raise CampaignError(f"'{slug}' is not a valid campaign id.")
+    return world, camp
+
+
 def campaigns_subdir():
     return _setting("campaigns_subdir", "GM_CAMPAIGNS_SUBDIR", DEFAULT_CAMPAIGNS_SUBDIR)
 
@@ -177,7 +236,20 @@ def transcripts_subdir():
     return _setting("transcripts_subdir", "GM_TRANSCRIPTS_SUBDIR", DEFAULT_TRANSCRIPTS_SUBDIR)
 
 
-def campaigns_dir():
+def world_vault(world):
+    """The vault directory for one world (multi-vault mode)."""
+    root, _ = vaults_root_source()
+    if root is None:
+        raise CampaignError(UNCONFIGURED)
+    return os.path.join(root, world)
+
+
+def campaigns_dir(world=None):
+    """Folder holding the campaigns. `world` is required in multi-vault mode."""
+    if multi_vault():
+        if world is None:
+            raise CampaignError("campaigns_dir() needs a world in multi-vault mode")
+        return os.path.join(world_vault(world), campaigns_subdir())
     return os.path.join(vault_root(), campaigns_subdir())
 
 
@@ -210,10 +282,14 @@ def work_root():
 
 def setup_hint():
     """One line for the GUI when no campaign loaded: what is wrong, or where it looked."""
+    if multi_vault():
+        return (f"No campaigns found under {vaults_root_source()[0]}/<world>/"
+                f"{campaigns_subdir()}/")
     try:
         return f"No campaigns found under {campaigns_dir()}"
     except CampaignError:
-        return "No vault configured. Set GM_VAULT, then run: python3 campaign.py doctor"
+        return ("No vault configured. Set GM_VAULTS_ROOT (or GM_VAULT), "
+                "then run: python3 campaign.py doctor")
 
 
 # ── Naming ────────────────────────────────────────────────────────────────────
@@ -254,7 +330,8 @@ class Campaign:
 
     @classmethod
     def load(cls, slug):
-        root = os.path.join(campaigns_dir(), slug)
+        world, name = split_slug(slug)
+        root = os.path.join(campaigns_dir(world), name)
         path = os.path.join(root, ALIASES_FILENAME)
         if not os.path.isfile(path):
             raise CampaignError(
@@ -283,6 +360,9 @@ class Campaign:
 
     @property
     def world(self):
+        """World name: the vault folder in multi-vault mode, else the JSON field."""
+        if "/" in self.slug:
+            return self.slug.split("/", 1)[0]
         return self.data.get("world") or ""
 
     @property
@@ -521,14 +601,25 @@ def append_object_entries(path, key, entries, indent="    "):
 
 
 def list_campaigns():
-    """[(slug, Campaign)] for every folder under 0.2_campaigns holding a canon_aliases.json."""
+    """[(id, Campaign)] for every campaign folder holding a canon_aliases.json.
+
+    Multi-vault ids are "<world>/<campaign>"; single-vault ids are the folder name.
+    """
     out = []
     try:
-        pattern = os.path.join(campaigns_dir(), "*", ALIASES_FILENAME)
+        if multi_vault():
+            pattern = os.path.join(vaults_root_source()[0], "*",
+                                   campaigns_subdir(), "*", ALIASES_FILENAME)
+        else:
+            pattern = os.path.join(campaigns_dir(), "*", ALIASES_FILENAME)
     except CampaignError:
         return []  # unconfigured vault: the GUI shows setup_hint() instead of dying
     for path in sorted(glob.glob(pattern)):
-        slug = os.path.basename(os.path.dirname(path))
+        camp_dir = os.path.dirname(path)
+        slug = os.path.basename(camp_dir)
+        if multi_vault():
+            world = os.path.basename(os.path.dirname(os.path.dirname(camp_dir)))
+            slug = f"{world}/{slug}"
         try:
             out.append((slug, Campaign.load(slug)))
         except CampaignError:
@@ -542,7 +633,8 @@ def load(slug):
 
 def add_campaign_argument(parser, required=True):
     parser.add_argument("--campaign", required=required,
-                        help="campaign folder name under the vault's campaigns dir")
+                        help="campaign id: <world>/<campaign> with GM_VAULTS_ROOT, "
+                             "else the folder name under the vault's campaigns dir")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -559,6 +651,7 @@ def _cmd_paths(slug, session):
         "CAMPAIGN":        c.slug,
         "CAMPAIGN_LABEL":  c.label,
         "CAMPAIGN_SYSTEM": c.system,
+        "CAMPAIGN_WORLD":  c.world,
         "CAMPAIGN_ROOT":   c.root,
         "ALIASES_FILE":    c.aliases_path,
         "TRANSCRIPTS_DIR": c.transcripts_dir,
@@ -589,21 +682,29 @@ def _cmd_doctor():
     print(f"config file    {cfg}" + ("" if os.path.isfile(cfg) else "   (not present)"))
     print()
 
-    try:
-        vault, src = vault_root_source()
-    except CampaignError as exc:
-        print("vault          NOT CONFIGURED")
-        print()
-        print(exc)
-        return 2
-
     def row(label, path, src):
         mark = "ok     " if os.path.isdir(path) else "missing"
         print(f"{label:<14} {path}")
         print(f"{'':<14} {mark}  from {src}")
 
-    row("vault", vault, src)
-    row("campaigns", campaigns_dir(), f"vault + {campaigns_subdir()!r}")
+    if multi_vault():
+        root, src = vaults_root_source()
+        row("vaults root", root, src)
+        worlds = sorted(d for d in glob.glob(os.path.join(root, "*"))
+                        if os.path.isdir(os.path.join(d, campaigns_subdir())))
+        print(f"{'worlds':<14} {', '.join(os.path.basename(w) for w in worlds) or '(none)'}")
+        if config().get("vault") or os.environ.get("GM_VAULT") or os.environ.get("VAULT"):
+            print(f"{'':<14} note: a single vault is also set; the vaults root wins")
+    else:
+        try:
+            vault, src = vault_root_source()
+        except CampaignError as exc:
+            print("vault          NOT CONFIGURED")
+            print()
+            print(exc)
+            return 2
+        row("vault", vault, src)
+        row("campaigns", campaigns_dir(), f"vault + {campaigns_subdir()!r}")
     row("audio root", *audio_root_source())
     row("chroma root", *chroma_root_source())
     row("work root", *work_root_source())
@@ -616,7 +717,7 @@ def _cmd_doctor():
     print(f"{len(camps)} campaign(s):")
     for slug, c in camps:
         flag = "" if c.has_review_only else "   (no review_only yet)"
-        print(f"  {slug:<16} {c.label}  [{c.system or 'system unset'}]{flag}")
+        print(f"  {slug:<24} {c.label}  [{c.system or 'system unset'}]{flag}")
     return 0
 
 

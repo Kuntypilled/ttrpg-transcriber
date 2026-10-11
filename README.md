@@ -191,7 +191,8 @@ Verify the lot:
 
 ## 5. Configuration: `canon_aliases.json`
 
-One file per campaign, at `$VAULT/0.2_campaigns/<campaign>/canon_aliases.json`. It is the
+One file per campaign, at `<vault>/0.2_campaigns/<campaign>/canon_aliases.json`, where
+`<vault>` is the campaign's world vault (`$GM_VAULTS_ROOT/<world>`) or `$GM_VAULT`. It is the
 entire configuration surface and the entire campaign registry. There is no second config
 file, no registry list, nothing to keep in sync.
 
@@ -327,27 +328,33 @@ python3 campaign.py paths --campaign emberfall --session 17
 
 | Variable | Default | Holds |
 |---|---|---|
-| `GM_VAULT` (or `VAULT`) | none, and unset is an error | the Obsidian vault |
-| `GM_AUDIO_ROOT` | `~/Documents/TTRPG Session Audio` | Craig recordings |
+| `GM_VAULTS_ROOT` | none | directory holding one vault per world; wins over `GM_VAULT` |
+| `GM_VAULT` (or `VAULT`) | none; one of the two vault settings is required | a single Obsidian vault |
+| `GM_AUDIO_ROOT` | `~/.local/share/ttrpg_audio` | Craig recordings |
 | `GM_CHROMA_ROOT` | `~/.local/share/ttrpg_memory` | vector stores |
 | `GM_WORK_ROOT` | `~/.cache/ttrpg_transcribe` | Whisper intermediates |
 | `TTRPG_DB` | unset | overrides the resolved DB path |
 | `TTRPG_EMBED` | `BAAI/bge-base-en-v1.5` | embedding model |
 
-Resolved per campaign and session:
+Resolved per campaign and session. `<id>` is `<world>/<campaign>` with `GM_VAULTS_ROOT`, or
+the bare campaign folder name with a single `GM_VAULT`; `<vault>` is the matching vault:
 
 ```
-transcript   $VAULT/0.2_campaigns/<c>/08_transcripts/S<nn>/transcript.md
-archive      $VAULT/0.2_campaigns/<c>/08_transcripts/S<nn>/archive/
-chunks       $VAULT/0.2_campaigns/<c>/08_transcripts/chunks/s<nn>_chunks.jsonl
-audio        $GM_AUDIO_ROOT/<c>/Session <n>/
-vector store $GM_CHROMA_ROOT/<c>/
-working      $GM_WORK_ROOT/<c>/S<nn>/temp/
+transcript   <vault>/0.2_campaigns/<c>/08_transcripts/S<nn>/transcript.md
+archive      <vault>/0.2_campaigns/<c>/08_transcripts/S<nn>/archive/
+chunks       <vault>/0.2_campaigns/<c>/08_transcripts/chunks/s<nn>_chunks.jsonl
+audio        $GM_AUDIO_ROOT/<id>/Session <n>/
+vector store $GM_CHROMA_ROOT/<id>/
+working      $GM_WORK_ROOT/<id>/S<nn>/temp/
 ```
+
+With one vault per world the world is part of the id on purpose: two worlds can each have a
+campaign called `main` and still keep separate audio, vector stores and working files.
+Campaigns are addressed as `--campaign emberfall/main`.
 
 Session numbers are zero-padded below 10: `S07`, `s07_chunks.jsonl`.
 
-Setting `GM_VAULT` to a scratch directory gives you a full sandbox, which is how the test
+Setting `GM_VAULT` (or `GM_VAULTS_ROOT`) to a scratch directory gives you a full sandbox, which is how the test
 runs for this tool are done without touching live session data.
 
 ---
@@ -439,8 +446,9 @@ index.
 
 ### The campaign registry is the filesystem
 
-A campaign is any directory under `0.2_campaigns/` containing a `canon_aliases.json`. That
-is the entire registry.
+A campaign is any directory under a vault's `0.2_campaigns/` containing a
+`canon_aliases.json`. That is the entire registry. With one vault per world, discovery scans
+`$GM_VAULTS_ROOT/*/0.2_campaigns/*/canon_aliases.json`.
 
 The alternative, a `campaigns.json` listing them, is a second source of truth that will
 drift from the directory structure the first time someone renames a folder. Globbing cannot
@@ -681,8 +689,8 @@ does not get to write the books.
 Two steps, no code:
 
 ```bash
-mkdir -p ~/gm_worldbuilding/0.2_campaigns/<slug>/08_transcripts/chunks
-$EDITOR ~/gm_worldbuilding/0.2_campaigns/<slug>/canon_aliases.json
+mkdir -p "$GM_VAULTS_ROOT/<world>/0.2_campaigns/<slug>/08_transcripts/chunks"
+$EDITOR "$GM_VAULTS_ROOT/<world>/0.2_campaigns/<slug>/canon_aliases.json"
 ```
 
 Minimum viable config:

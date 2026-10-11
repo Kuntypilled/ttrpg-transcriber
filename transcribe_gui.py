@@ -3,8 +3,8 @@
 Session Transcriber: TTRPG session audio transcription GUI (GTK3)
 
 Campaign-agnostic. The dropdown at the top is populated by globbing
-$VAULT/0.2_campaigns/*/canon_aliases.json, so adding a campaign means creating
-one folder with one JSON file. Selecting a campaign drives the alias file, the
+<vault>/0.2_campaigns/*/canon_aliases.json, across every world's vault under
+GM_VAULTS_ROOT, so adding a campaign means creating one folder with one JSON file. Selecting a campaign drives the alias file, the
 audio folder, the transcript folder, the chunk folder and the Chroma database.
 
 GTK3 bindings are a system package, not a pip install. See INSTALL.md.
@@ -389,7 +389,7 @@ class MBTranscriberWindow(Gtk.Window):
         self._session_num    = None
         # Maps filename -> resolved display label for file list
         self._file_labels    = {}
-        # Campaign registry: every folder under 0.2_campaigns with a canon_aliases.json
+        # Campaign registry: every folder under a vault's 0.2_campaigns with a canon_aliases.json
         self._campaigns      = campaign_mod.list_campaigns()
         self._campaign       = self._campaigns[0][1] if self._campaigns else None
 

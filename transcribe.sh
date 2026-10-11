@@ -17,7 +17,8 @@
 #   6. Generate human-readable → transcript.md
 #
 # Requirements:
-#   - whisper-cli  (build: cmake -B build -DGGML_VULKAN=ON && cmake --build build -j$(nproc))
+#   - whisper-cli  (Arch: sudo pacman -S ggml-vulkan whisper-cpp. Elsewhere, build it:
+#                   see INSTALL.md, "Everywhere else: build it")
 #   - ffmpeg       (your distribution's package manager)
 #   - jq           (your distribution's package manager)
 #   - Model:       ggml-large-v3-turbo.bin from huggingface.co/ggerganov/whisper.cpp
@@ -34,9 +35,13 @@
 # --campaign resolves every path from the vault by asking campaign.py, so the
 # path rules live in exactly one place and are not duplicated here:
 #   input   $GM_AUDIO_ROOT/<campaign>/Session <n>
-#   output  $GM_VAULT/<campaigns>/<campaign>/<transcripts>/S<nn>/
-#   temp    $GM_WORK_ROOT/<campaign>/S<nn>/temp   (outside the vault; see below)
-#   aliases $GM_VAULT/<campaigns>/<campaign>/canon_aliases.json
+#   output  <vault>/<campaigns>/<campaign>/<transcripts>/S<nn>/
+#   temp    $GM_WORK_ROOT/<id>/S<nn>/temp   (outside the vault; see below)
+#   aliases <vault>/<campaigns>/<campaign>/canon_aliases.json
+#
+# <id> is "<world>/<campaign>" with GM_VAULTS_ROOT set (one vault per world),
+# or the bare campaign folder name with a single GM_VAULT. <vault> is the
+# world's vault in the first case and $GM_VAULT in the second.
 #
 # The whisper working files (.raw.tsv, .processed.tsv, per-track .json) are
 # intermediates that Obsidian ignores but Obsidian Sync does not, so temp/ lives
@@ -84,11 +89,12 @@ DEFAULT_IGNORE_WORDS=("you" "silence" "um" "uh" "ah" "like" "right" "well")
 
 usage() {
     cat <<'EOF'
-Usage: transcribe.sh --campaign SLUG --session N [OPTIONS]
+Usage: transcribe.sh --campaign ID --session N [OPTIONS]
        transcribe.sh -i INPUT_FOLDER [OPTIONS]
 
 Campaign mode (resolves every path from the vault):
-      --campaign SLUG         Campaign folder under $VAULT/0.2_campaigns/
+      --campaign ID           <world>/<campaign> under $GM_VAULTS_ROOT, or the
+                              campaign folder under $GM_VAULT/0.2_campaigns/
       --session N             Session number
 
 Manual mode:
@@ -182,7 +188,7 @@ fi
 
 # --post-process-only replays archived whisper JSON, so it needs no audio at all.
 if [[ -z "$INPUT_FOLDER" ]] && ! $CHECK_ONLY && ! $POST_PROCESS_ONLY; then
-    echo "ERROR: give --campaign SLUG --session N, or --input-folder DIR." >&2
+    echo "ERROR: give --campaign ID --session N, or --input-folder DIR." >&2
     usage
 fi
 
@@ -237,12 +243,13 @@ check_dependencies() {
         if command -v pacman &>/dev/null; then
             echo "            On Arch, install it rather than building:"
             echo "              sudo pacman -S ggml-vulkan whisper-cpp"
-            echo "            Swap ggml-vulkan for ggml-cuda, ggml-hip or ggml-cpu to match your hardware."
+            echo "            Swap ggml-vulkan for ggml-cuda, ggml-hip or ggml-sycl to match your hardware."
+            echo "            With no GPU, install whisper-cpp alone: the CPU backend is part of ggml."
             echo ""
         fi
         echo "            Or build it. Upstream is ggml-org/whisper.cpp:"
-        echo "              git clone https://github.com/ggml-org/whisper.cpp"
-        echo "              cd whisper.cpp"
+        echo "              git clone https://github.com/ggml-org/whisper.cpp ~/src/whisper.cpp"
+        echo "              cd ~/src/whisper.cpp"
         echo "              cmake -B build -DGGML_VULKAN=1"
         echo "              cmake --build build -j\$(nproc) --config Release"
         echo "              sudo install -Dm755 build/bin/whisper-cli /usr/local/bin/whisper-cli"
@@ -281,7 +288,7 @@ check_dependencies() {
     if [[ -z "$ALIASES_FILE" ]]; then
         echo "  [WARNING] No campaign selected, so no canon_aliases.json."
         echo "            No Whisper seed prompt, and speaker names fall back to"
-        echo "            filename parsing. Pass --campaign SLUG or --aliases PATH."
+        echo "            filename parsing. Pass --campaign ID or --aliases PATH."
     elif [[ -f "$ALIASES_FILE" ]]; then
         echo "  [OK] canon_aliases.json found: $ALIASES_FILE"
         if [[ -n "$WHISPER_PROMPT" ]]; then
