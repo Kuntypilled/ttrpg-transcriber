@@ -1,3 +1,6 @@
+# Rust
+/target
+
 # Python
 __pycache__/
 *.py[cod]
@@ -5,18 +8,18 @@ __pycache__/
 .venv/
 venv/
 
-# Runtime logs and state. The log moved to $XDG_STATE_HOME, but an old
-# in-tree log can still exist in a checkout upgraded in place.
+# Runtime logs and state
 *.log
 transcriptions/
 transcription_log.csv
 transcription_state.csv
 
 # Real campaign configuration. canon_aliases.json holds players' real names and
-# Discord handles, and it belongs in the vault, not in this repository. The only
-# alias file that is tracked here is canon_aliases.example.json.
+# Discord handles, and it belongs in the vault, not in this repository. The files
+# that are tracked are the invented examples and the test fixtures.
 canon_aliases.json
 config.json
+!crates/ttrpg-core/tests/fixtures/**/canon_aliases.json
 
 # Local overrides
 .env

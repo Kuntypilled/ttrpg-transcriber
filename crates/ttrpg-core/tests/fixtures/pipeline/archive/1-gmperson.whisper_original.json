@@ -1,0 +1,195 @@
+{
+ "systeminfo": "invented",
+ "model": {
+  "type": "stub"
+ },
+ "transcription": [
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 0,
+    "to": 900
+   },
+   "text": " you"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 1000,
+    "to": 4000
+   },
+   "text": " The Cinder Road runs out at the gates."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 4000,
+    "to": 6000
+   },
+   "text": " Um."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 6000,
+    "to": 9000
+   },
+   "text": " Roll to see what you notice."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 9000,
+    "to": 9500
+   },
+   "text": " Roll to see what you notice."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 12000,
+    "to": 13000
+   },
+   "text": " Go ahead."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 20000,
+    "to": 50000
+   },
+   "text": " Thank you."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 51000,
+    "to": 52000
+   },
+   "text": " Okay then."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 53000,
+    "to": 54000
+   },
+   "text": " We'll be right back."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 60000,
+    "to": 90000
+   },
+   "text": " We'll be right back."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 100000,
+    "to": 102000
+   },
+   "text": " Café ñandú — it's \"quoted\"."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 130000,
+    "to": 131000
+   },
+   "text": ""
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 140000,
+    "to": 141000
+   },
+   "text": " tab\there"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 142000,
+    "to": 143000
+   },
+   "text": " line1\nline2"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 144000,
+    "to": 145000
+   },
+   "text": " back\\slash"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 3725000,
+    "to": 3726000
+   },
+   "text": " Late in the evening."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 90000000,
+    "to": 90001000
+   },
+   "text": " Past a day."
+  }
+ ]
+}

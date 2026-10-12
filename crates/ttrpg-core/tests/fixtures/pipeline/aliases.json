@@ -1,0 +1,20 @@
+{
+  "campaign": "Pipeline fixture",
+  "discord_names": {
+    "gmperson": {
+      "player": "Sky",
+      "character": null,
+      "role": "GM"
+    },
+    "riverone": {
+      "player": "Pat",
+      "character": "Mara_Quill",
+      "role": "Player"
+    },
+    "rivertwo": {
+      "player": "Lee",
+      "character": "Tomas Ink",
+      "role": "Player"
+    }
+  }
+}

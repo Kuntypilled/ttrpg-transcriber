@@ -1,0 +1,10 @@
+  Processed: 1-gmperson.processed.tsv — filtered: 2, collapsed: 2, stock phrases dropped: 2
+  Processed: 2-riverone.processed.tsv — filtered: 2, collapsed: 0
+  Processed: 3-rivertwo.processed.tsv — filtered: 0, collapsed: 1, stock phrases dropped: 1
+  Processed: 4-plain_0.processed.tsv — filtered: 0, collapsed: 0
+Aggregating 4 processed files...
+Consolidating consecutive same-speaker lines...
+Created consolidated_transcript.tsv (22 → 17 lines, 22% reduction)
+Created merged_transcript.tsv
+Created transcript.md (17 entries)
+Creating transcript.md...

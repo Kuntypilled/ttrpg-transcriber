@@ -1,0 +1,14 @@
+{
+    "_comment": "Invented. No speaker_map and no players, so both are derived.",
+    "campaign": "Tidewatch",
+    "world": "tidewatch-world",
+    "system": "dnd-5e",
+    "seed_prompt": "A tabletop session. Characters: Mara Quill, Tomas Ink.",
+    "discord_names": {
+        "_comment": "comment keys are skipped",
+        "riverone": {"player": "Pat", "character": "Mara Quill", "role": "Player"},
+        "rivertwo": {"player": "Lee", "character": "Tomas Ink", "role": "Player"},
+        "gmperson": {"player": "Sky", "character": null, "role": "GM"},
+        "badentry": "not an object"
+    }
+}

@@ -1,0 +1,85 @@
+{
+ "systeminfo": "invented",
+ "model": {
+  "type": "stub"
+ },
+ "transcription": [
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 2000,
+    "to": 3000
+   },
+   "text": " I step forward."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 12000,
+    "to": 14500
+   },
+   "text": " Of course."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 14500,
+    "to": 15000
+   },
+   "text": " Right?"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 15000,
+    "to": 15500
+   },
+   "text": " WELL,"
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 16000,
+    "to": 17000
+   },
+   "text": " Well then, I do."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 60000,
+    "to": 61000
+   },
+   "text": " Thank you."
+  },
+  {
+   "timestamps": {
+    "from": "x",
+    "to": "x"
+   },
+   "offsets": {
+    "from": 3000000,
+    "to": 3001000
+   },
+   "text": " An hour in."
+  }
+ ]
+}

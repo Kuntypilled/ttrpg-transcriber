@@ -1,0 +1,22 @@
+# Python dependencies for the ingest and query stages (chroma_memory.py).
+#
+# Everything else the program uses (whisper-cli, ffmpeg) is not Python; `ttrpg-tui check`
+# says what is missing and how to install it.
+
+chromadb
+sentence-transformers
+
+# Pinning
+# -------
+# These are deliberately unpinned, because the versions that matter are the ones
+# that work on your machine, not the ones that worked on mine. Once the tool runs
+# end to end, freeze what you actually have and commit that instead:
+#
+#     pip freeze | grep -iE 'chromadb|sentence-transformers|torch|transformers|numpy' \
+#       > requirements.lock.txt
+#
+# One known constraint, read off the code rather than off a changelog:
+# chroma_memory.py calls get_or_create_collection(configuration={"hnsw": ...}).
+# Older chromadb releases took that setting as metadata={"hnsw:space": ...} and
+# do not accept a 'configuration' keyword, so they will raise a TypeError there.
+# If that happens, upgrade chromadb rather than editing the call.

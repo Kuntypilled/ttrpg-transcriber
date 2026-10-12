@@ -1,0 +1,20 @@
+[
+ {
+  "name": "default",
+  "dictionary": true,
+  "threshold": 0.7,
+  "min_freq": 2
+ },
+ {
+  "name": "loose",
+  "dictionary": true,
+  "threshold": 0.6,
+  "min_freq": 1
+ },
+ {
+  "name": "no_dictionary",
+  "dictionary": false,
+  "threshold": 0.7,
+  "min_freq": 2
+ }
+]
