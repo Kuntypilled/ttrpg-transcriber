@@ -10,9 +10,12 @@ What was found to differ between that document and the code is in
 ## Status
 
 All seven milestones of PORTING.md section 11 are done. The cutover (7) is the branch
-in the original repository, not yet merged. What has not happened is a run on a real
-session with real whisper and real ChromaDB: everything is tested against stand-ins and
-against the original scripts' output on invented data.
+in the original repository, not yet merged. One real session has been transcribed with
+real `whisper-cli` and `ffmpeg` on a real machine: its merged transcript and `transcript.md`
+are byte-identical to what the stock-rule version of the original script made from the same
+audio, and differ from a run before the rule only by the 136 invented lines it drops.
+What has not happened is a run against real ChromaDB (Index, `info`, `query`): that is
+tested against a stand-in and the original scripts' output on invented data.
 
 What you can do now:
 
@@ -59,9 +62,8 @@ each checked byte for byte against the scripts they replaced. ChromaDB itself st
 Python for good: Index, `info` and `query` need the Python that has ChromaDB installed
 (the `python` setting). The small Python helper that talks to it is built into the
 program (`python/chroma_memory.py`) and no longer needs any of the original scripts.
-Before relying on it, run one real session through it and compare `transcript.md` and
-the chunk file with what the GUI makes from the same audio, then run
-`ttrpg-tui info CAMPAIGN` against a real store.
+Before relying on Index, run it once on a real campaign and then `ttrpg-tui info CAMPAIGN`
+against the real store.
 
 ## Try it without whisper or real recordings
 
