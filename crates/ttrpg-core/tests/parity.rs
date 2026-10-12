@@ -2,13 +2,12 @@
 //!
 //! Each test builds a throwaway vault from invented fixtures, then runs the same
 //! command through `tests/oracle/campaign.py` and through ttrpg-core with an identical
-//! environment, and requires identical output and exit code. They need `python3`; without it each test prints SKIPPED.
+//! environment, and requires identical output and exit code. They need `python3`; without
+//! it each test prints SKIPPED.
 //!
-//! Only two normalisations are applied to the Python output, both for text that
-//! names the program or an example id: `python3 campaign.py` becomes `ttrpg-tui`
-//! and the original's example campaign id becomes the one used here.
-//! The text of a JSON syntax error is masked, because serde_json and Python word it
-//! differently.
+//! One normalisation is applied to the Python output, for text that names the program:
+//! `python3 campaign.py` becomes `ttrpg-tui`. The text of a JSON syntax error is masked,
+//! because serde_json and Python word it differently.
 
 use std::collections::HashMap;
 use std::fs;
@@ -128,10 +127,7 @@ fn mask_json_error(s: &str) -> String {
 }
 
 fn normalise(s: &str) -> String {
-    mask_json_error(
-        &s.replace("python3 campaign.py", CLI)
-            .replace("emberfall/main", "emberfall/main"),
-    )
+    mask_json_error(&s.replace("python3 campaign.py", CLI))
 }
 
 fn run_oracle(py: &Path, env: &HashMap<String, String>, args: &[&str]) -> Out {

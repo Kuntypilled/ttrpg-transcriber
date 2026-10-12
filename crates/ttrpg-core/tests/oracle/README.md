@@ -5,8 +5,10 @@ does not run, read or need any of them.
 
 They are copies of files from `Kuntypilled/ttrpg-transcriber` at commit `98aa387`
 (2026-10-11). `campaign.py` and `transcript_to_chunks.py` are byte-identical to that
-commit; `transcribe.sh` carries the one local change listed below. Do not edit them
-otherwise.
+commit except for three kinds of change: `transcribe.sh` carries the stock-phrase rule listed
+below, and the names that the author's real campaign had left in comments, messages and one
+line of report text were replaced with invented ones (`emberfall/main`, `Kestrel Vane`,
+`Vashti`, `Wern`, `Dunwell`). Do not edit them otherwise.
 
 | File | What it is for |
 |---|---|
