@@ -44,11 +44,12 @@ whisper output (`p`) without audio.
 
 ## Before merging this branch
 
-The Rust pipeline has been run against stand-ins for whisper and ChromaDB and against
-these scripts' own output on invented data. It has not yet been run on a real session
-with real whisper and real ChromaDB. Run one session through the terminal program,
-compare its `transcript.md` and chunk file with what the GUI made from the same audio,
-and run `ttrpg-tui info CAMPAIGN` once against a real store.
+One real session has been transcribed with the terminal program on a real machine, with
+real `whisper-cli` and `ffmpeg`. Its merged transcript and `transcript.md` are
+byte-identical to what the stock-rule version of `transcribe.sh` made from the same audio.
+Against a run made before that rule, the only difference is the 136 invented lines the rule
+drops. What has not been run is Index, `ttrpg-tui info` and `ttrpg-tui query` against a real
+ChromaDB store; do that once on a real campaign before you stop using the GUI's Index button.
 
 ## Finishing the archive (your call, none of it is done here)
 
