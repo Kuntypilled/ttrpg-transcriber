@@ -3,8 +3,10 @@
 
 Understands the flags transcribe.sh passes (-of PREFIX, -oj, -m, -l, --prompt, -dev,
 -mc and the input wav), waits a moment so the progress bar has something to show,
-then writes canned dialogue for the track as whisper.cpp -oj JSON. Every name and
-line is invented.
+then prints each segment to stdout the way whisper.cpp does (the app shows those
+lines dimmed) and writes canned dialogue for the track as whisper.cpp -oj JSON.
+Every name and line is invented. A "Thank you." that lasts 30 seconds is what
+whisper makes up on a silent stretch; the script drops it. A short one is kept.
 
     DEMO_DELAY   seconds of pretend work per track (default 2.5)
     a file name containing "fail" makes it exit with an error, to show a failed track
@@ -66,17 +68,20 @@ SCENE = {
         (10100, "near it."),
         (60500, "Ask her whose colours those are. Nobody wears Marlow in Emberfall anymore."),
         (88000, "Seven. I found the torn edge of the page."),
+        (98000, "Thank you.", 30000),  # invented on silence: dropped
     ],
     4: [
         (13000, "Kestrel, is it me, or are the lanterns watching us?"),
         (39000, "I will wait by the door. Somebody should."),
         (72000, "Nell checks the shadows by the archway."),
         (90500, "Twelve! Is that good? It sounds good."),
+        (110000, "Thank you.", 30000),  # invented on silence: dropped
     ],
     5: [
         (15000, "It is you. But also yes, a little."),
         (41000, "Kestrel, who has seen this before, draws the shutters closed."),
         (97500, "That page is from Thornwake, I would bet on it."),
+        (101000, "Thank you."),  # someone really saying it: 2.5 s, kept
     ],
     6: [  # a guest nobody has added to discord_names yet
         (45000, "Sorry, joining late, can you hear me? I am only here for the night."),
@@ -84,9 +89,16 @@ SCENE = {
     ],
 }
 
+def stamp(ms):
+    return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
 segments = []
-for start, text in SCENE.get(track, [(1000, "Testing, testing.")]):
-    segments.append({"offsets": {"from": start, "to": start + 2500}, "text": " " + text})
+for entry in SCENE.get(track, [(1000, "Testing, testing.")]):
+    start, text = entry[0], entry[1]
+    end = start + (entry[2] if len(entry) > 2 else 2500)
+    segments.append({"offsets": {"from": start, "to": end}, "text": " " + text})
+    # What whisper-cli prints to stdout while it works.
+    print(f"[{stamp(start)} --> {stamp(end)}]   {text}", flush=True)
 
 with open(out_prefix + ".json", "w", encoding="utf-8") as f:
     json.dump({"transcription": segments}, f, ensure_ascii=False)

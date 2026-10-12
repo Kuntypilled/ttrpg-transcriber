@@ -8,7 +8,7 @@ What was found to differ between that document and the code is in
 
 ## Status
 
-Milestones 1 and 2 of 7 (PORTING.md section 11).
+Milestones 1 to 3 of 7 (PORTING.md section 11).
 
 What you can do now:
 
@@ -16,10 +16,16 @@ What you can do now:
   finished session, or the same one again if its run never produced a transcript.
 - Choose the Craig audio files in a yazi-style picker (folders, multi-select).
 - See who is speaking on every track, from the campaign's `discord_names`. Tracks
-  with no entry are flagged.
+  with no entry are flagged, and `r` opens a form to say who they are: it adds them
+  to the campaign's `canon_aliases.json` by splicing in the new lines, so the rest
+  of the file is not touched.
 - Press Start. After a confirmation that says plainly the files are **moved**, they
   go into the session's audio folder and the original `transcribe.sh` runs behind a
-  progress bar, with its output streaming into a log. Cancel at any time.
+  progress bar, with its output streaming into a log (whisper's own lines dimmed, the
+  script's not). Cancel at any time.
+- Whisper makes up "Thank you." on silent stretches of a track. The script drops
+  those, and the confirmation step shows the rule and lets you keep them for one run
+  (`t`). It is the stock-phrase rule in `legacy/README.md`.
 - Read the result honestly ("4 of 5 transcribed, 1 failed", with the failing track
   named), mark each track done or failed in the list, and read the finished
   transcript in the app.
@@ -28,9 +34,9 @@ What you can do now:
 - The plain commands `doctor`, `list`, `paths`, `whisper-device` (same output as
   `campaign.py`) and `check` (are the tools installed? creates nothing).
 
-Not done yet: adding unknown speakers from inside the app (milestone 3), indexing
-into ChromaDB (4), the alias report, and replacing the shell and Python stages with
-Rust (5). Until then the app runs the pinned scripts in `legacy/`.
+Not done yet: indexing into ChromaDB (milestone 4), the alias report, and replacing
+the shell and Python stages with Rust (5). Until then the app runs the scripts in
+`legacy/`.
 
 ## Try it without whisper or real recordings
 
@@ -42,7 +48,7 @@ builds a throwaway world (an invented campaign, six tiny "Craig" tracks in a
 Downloads folder, one from a speaker the campaign does not know, and a stand-in
 `whisper-cli` that waits a few seconds per track) and opens the app on it. Nothing
 outside the demo folder is touched. Follow the hints it prints: `f`, `a`, `c`,
-`s`, Enter. Variations: `DEMO_FAIL=1` adds a track that fails, `DEMO_DELAY=0` makes
+`s`, Enter; afterwards `r` resolves the unknown guest. Variations: `DEMO_FAIL=1` adds a track that fails, `DEMO_DELAY=0` makes
 runs instant, `--keep` reuses last time's world so you can see skipped tracks.
 
 ## Install and run
@@ -66,13 +72,15 @@ here, or wherever `legacy_dir` points.
 The same as the original: environment variables, then
 `$XDG_CONFIG_HOME/ttrpg-transcriber/config.json`, then built-in defaults. `doctor`
 shows where each value came from; with no vault configured it prints the setup
-instructions. Three settings are new:
+instructions. These settings are new:
 
 | Setting | Environment variable | Config key | Default |
 |---|---|---|---|
 | whisper command | `GM_WHISPER_BIN` | `whisper_bin` | `whisper-cli` on PATH |
 | model file | `GM_WHISPER_MODEL` | `whisper_model` | `~/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin` |
 | where `transcribe.sh` lives | `GM_LEGACY_DIR` | `legacy_dir` | the `legacy/` folder next to the program, or in the checkout it was built from |
+| phrases whisper makes up on silence | `GM_STOCK_PHRASES` (comma-separated, or `off`) | `stock_phrases` (a list, or `[]` for off) | `thank you`, `we'll be right back` |
+| how long such a line must last to be dropped | `GM_STOCK_MIN_SECONDS` | `stock_min_seconds` | `20` |
 
 `GM_WHISPER_DEVICE` / `whisper_device` (for machines with two GPUs) work as before.
 
@@ -88,13 +96,14 @@ the pointer.
 | `j` `k`, arrows, `g` `G`, `PgUp` `PgDn` | move or scroll in the focused pane |
 | `n` | type the session number (`+` and `-` step it) |
 | `f` | choose audio files (in the picker: `Space` tick, `a` all, `l` open, `h` up, `.` hidden, `c` done) |
-| `s` | start (asks first) |
+| `r` | resolve unknown speakers: add them to the campaign's `discord_names` (in the form: `Tab` next field, `Ctrl-N` `Ctrl-P` pick a character, `Ctrl-S` or `Enter` on the last field saves, `Esc` cancels) |
+| `s` | start (asks first; at the question, `t` keeps or drops whisper's made-up lines for this run) |
 | `x` | cancel the running job |
 | `o` | open the session folder |
 | `c` | clear the chosen files |
 | `[` `]` or `1` `2` `3` | Paths / Log / Transcript tab |
 | `z` | zoom the right-hand pane to the full screen (`Esc` or `z` restores) |
-| `r` | rescan campaigns and tools |
+| `R` | rescan campaigns and tools |
 | `!` | what is installed and what is missing |
 | `?` | help |
 | `q` | quit (press twice while a job runs: it is cancelled first) |
@@ -103,9 +112,9 @@ the pointer.
 
 | Path | What |
 |---|---|
-| `crates/ttrpg-core` | Library, no UI. Config, campaigns, paths, speaker resolution, the job runner. |
+| `crates/ttrpg-core` | Library, no UI. Config, campaigns, paths, speaker resolution, the alias-file edit, the job runner. |
 | `crates/ttrpg-tui` | The `ttrpg-tui` program: commands, and the app as a library so tests can drive it. |
-| `legacy/` | Pinned copies of the original scripts. See `legacy/README.md`. |
+| `legacy/` | Copies of the original scripts, with one documented change. See `legacy/README.md`. |
 | `examples/` | Invented example config and alias file. |
 | `scripts/demo.sh` | The demo above. |
 
@@ -118,7 +127,8 @@ cargo test --workspace
 Three kinds of test:
 
 - **Parity**: the same commands through `legacy/campaign.py` and the Rust code must
-  print the same thing.
+  print the same thing, and the alias-file edit must produce the same bytes as the
+  original's `append_object_entries`.
 - **End to end**: the real `legacy/transcribe.sh`, real `ffmpeg` and `jq`, and a stub
   `whisper-cli`, driven through the job runner and through the whole app with
   keystrokes and mouse clicks.

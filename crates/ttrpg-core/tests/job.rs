@@ -33,6 +33,17 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
 if [[ -n "${STUB_FAIL_MATCH:-}" && "$wav" == *"$STUB_FAIL_MATCH"* ]]; then exit 3; fi
+if [[ -n "${STUB_THANKS:-}" ]]; then
+cat > "${of}.json" <<'J'
+{"transcription":[
+ {"offsets":{"from":1000,"to":2000},"text":" The lantern is lit."},
+ {"offsets":{"from":10000,"to":40000},"text":" Thank you."},
+ {"offsets":{"from":41000,"to":42000},"text":" We go on."},
+ {"offsets":{"from":43000,"to":44500},"text":" Thank you."}
+]}
+J
+exit 0
+fi
 cat > "${of}.json" <<'J'
 {"transcription":[
  {"offsets":{"from":0,"to":900},"text":" you"},
@@ -477,4 +488,79 @@ fn replacing_a_same_name_file_is_flagged_in_the_plan() {
         0,
         "the name being replaced is not also counted as existing"
     );
+}
+
+#[test]
+fn the_stock_phrase_rule_runs_by_default_and_the_settings_reach_the_script() {
+    require_tools!();
+    let count = |report: &RunReport| {
+        fs::read_to_string(report.transcript_md.as_deref().unwrap())
+            .unwrap()
+            .matches("Thank you.")
+            .count()
+    };
+
+    // Nothing set: no flags are passed, the script's own default drops the 30 s one.
+    let fx = Fixture::new(&[("STUB_THANKS", "1")]);
+    let plan = fx.plan(1, &[fx.tone("1-gmperson.flac")]);
+    assert!(plan.args.iter().all(|a| !a.starts_with("--stock")), "{:?}", plan.args);
+    assert!(plan.stock.enabled());
+    let (_, report) = run_job(plan, |_, _| {});
+    assert!(report.ok(), "{}", report.headline());
+    assert_eq!(count(&report), 1, "the 1.5 s one stays, the 30 s one is dropped");
+
+    // Turned off in the settings: the flag is passed with an empty list, both stay.
+    let fx = Fixture::new(&[("STUB_THANKS", "1"), ("GM_STOCK_PHRASES", "off")]);
+    let plan = fx.plan(1, &[fx.tone("1-gmperson.flac")]);
+    let at = plan.args.iter().position(|a| a == "--stock-phrases").unwrap();
+    assert_eq!(plan.args[at + 1], "");
+    let (_, report) = run_job(plan, |_, _| {});
+    assert_eq!(count(&report), 2);
+
+    // A longer limit than the 30 s line keeps it too.
+    let fx = Fixture::new(&[("STUB_THANKS", "1"), ("GM_STOCK_MIN_SECONDS", "31")]);
+    let plan = fx.plan(1, &[fx.tone("1-gmperson.flac")]);
+    assert!(plan.args.windows(2).any(|w| w == ["--stock-min-seconds", "31"]));
+    let (_, report) = run_job(plan, |_, _| {});
+    assert_eq!(count(&report), 2);
+}
+
+#[test]
+fn the_rule_can_be_switched_for_one_run_without_leaving_stale_flags() {
+    require_tools!();
+    let fx = Fixture::new(&[("GM_STOCK_MIN_SECONDS", "45")]);
+    let plan = fx.plan(1, &[fx.tone("1-gmperson.flac")]);
+    let flags = |p: &ttrpg_core::JobPlan| {
+        p.args
+            .iter()
+            .filter(|a| a.starts_with("--stock"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let others = |p: &ttrpg_core::JobPlan| {
+        let mut out = Vec::new();
+        let mut it = p.args.iter();
+        while let Some(a) = it.next() {
+            if a.starts_with("--stock") {
+                it.next();
+            } else {
+                out.push(a.clone());
+            }
+        }
+        out
+    };
+    assert_eq!(flags(&plan), ["--stock-min-seconds"]);
+
+    let off = plan.clone().with_stock_rule(plan.stock.off());
+    assert_eq!(
+        flags(&off),
+        ["--stock-phrases", "--stock-min-seconds"],
+        "once each, no duplicates"
+    );
+    assert!(!off.stock.enabled() && off.stock.min_seconds == 45);
+    assert_eq!(others(&off), others(&plan), "every other argument is untouched");
+
+    let back = off.with_stock_rule(ttrpg_core::StockRule::default());
+    assert!(flags(&back).is_empty(), "the default needs no flags: {:?}", back.args);
+    assert_eq!(others(&back), others(&plan));
 }

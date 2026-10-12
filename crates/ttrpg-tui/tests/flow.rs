@@ -35,6 +35,17 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
 if [[ -n "${STUB_FAIL_MATCH:-}" && "$wav" == *"$STUB_FAIL_MATCH"* ]]; then exit 3; fi
+if [[ -n "${STUB_THANKS:-}" ]]; then
+cat > "${of}.json" <<'J'
+{"transcription":[
+ {"offsets":{"from":1000,"to":2000},"text":" The lantern is lit."},
+ {"offsets":{"from":10000,"to":40000},"text":" Thank you."},
+ {"offsets":{"from":41000,"to":42000},"text":" We go on."},
+ {"offsets":{"from":43000,"to":44500},"text":" Thank you."}
+]}
+J
+exit 0
+fi
 cat > "${of}.json" <<'J'
 {"transcription":[
  {"offsets":{"from":1000,"to":2000},"text":" The lantern is lit."},
@@ -420,7 +431,7 @@ fn the_session_number_is_offered_edited_and_stepped() {
         Some(1),
         "the number chosen when the program opened stands"
     );
-    rig.press('r');
+    rig.press('R');
     assert_eq!(rig.app.session, Some(1), "a rescan does not overwrite the number");
     rig.restart();
     assert_eq!(
@@ -566,7 +577,7 @@ fn campaigns_cannot_be_switched_mid_run() {
     let other = rig.tmp.path().join("vault/0.2_campaigns/other");
     fs::create_dir_all(&other).unwrap();
     fs::write(other.join("canon_aliases.json"), "{}").unwrap();
-    rig.press('r');
+    rig.press('R');
     assert_eq!(rig.app.campaigns.len(), 2);
     rig.five_tracks();
     rig.choose_all_in_downloads();
@@ -593,4 +604,324 @@ fn open_folder_opens_the_session_folder_once_it_exists() {
     let opened = rig.opened.borrow();
     assert_eq!(opened.len(), 1);
     assert!(opened[0].ends_with("08_transcripts/S01"), "{opened:?}");
+}
+
+#[test]
+fn the_confirm_step_shows_the_invented_lines_rule_and_can_flip_it_for_one_run() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_THANKS", "1")]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.press('s');
+    assert!(matches!(rig.app.modal, Some(Modal::Confirm(_))));
+    let on = rig.draw();
+    for want in [
+        "Invented lines",
+        "\"thank you\" and \"we'll be right back\"",
+        "20 s or more",
+        "[t] Keep invented lines",
+    ] {
+        assert!(on.contains(want), "missing {want:?}:\n{on}");
+    }
+
+    // t flips it off for this run, and says so.
+    rig.press('t');
+    let off = rig.draw();
+    assert!(
+        off.contains("Off: lines like \"Thank you.\"") && off.contains("[t] Drop invented lines"),
+        "{off}"
+    );
+    assert!(off.contains("Turned off for this run."), "{off}");
+    // Clicking the button flips it back on, and a second click off again.
+    let btn = rig.app.hit.confirm_stock;
+    assert!(btn.width > 0);
+    rig.click(btn.x + 1, btn.y);
+    assert!(rig.draw().contains("[t] Keep invented lines"));
+    let btn = rig.app.hit.confirm_stock;
+    rig.click(btn.x + 1, btn.y);
+    assert!(rig.draw().contains("[t] Drop invented lines"));
+
+    // Run it off: both "Thank you." lines stay in the transcript.
+    rig.app.on_key(key(KeyCode::Enter));
+    assert!(rig.app.running());
+    rig.pump_until("the job to finish", |a| !a.running());
+    let report = rig.app.report.clone().unwrap();
+    assert!(report.ok(), "{report:?}");
+    let md = fs::read_to_string(report.transcript_md.as_deref().unwrap()).unwrap();
+    assert_eq!(md.matches("Thank you.").count(), 2, "{md}");
+
+    // The flip lasted one run: the next confirm step is back to the setting (on).
+    rig.press('s');
+    assert!(rig.draw().contains("[t] Keep invented lines"));
+    rig.app.on_key(key(KeyCode::Esc));
+}
+
+#[test]
+fn by_default_a_run_drops_the_invented_line_and_keeps_the_real_one() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_THANKS", "1")]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    rig.pump_until("the job to finish", |a| !a.running());
+    let report = rig.app.report.clone().unwrap();
+    let md = fs::read_to_string(report.transcript_md.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        md.matches("Thank you.").count(),
+        1,
+        "the 30 s one is gone, the 1.5 s one stays:\n{md}"
+    );
+    let log = rig.app.log.iter().cloned().collect::<Vec<_>>().join("\n");
+    assert!(log.contains("stock phrases dropped: 1"), "{log}");
+}
+
+#[test]
+fn a_setting_that_turns_the_rule_off_is_shown_and_t_can_turn_it_back_on() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_THANKS", "1"), ("GM_STOCK_PHRASES", "off")]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.press('s');
+    let screen = rig.draw();
+    assert!(
+        screen.contains("Off: lines like") && screen.contains("Set by $GM_STOCK_PHRASES"),
+        "{screen}"
+    );
+    rig.press('t');
+    let screen = rig.draw();
+    assert!(
+        screen.contains("[t] Keep invented lines") && screen.contains("\"thank you\" and \"we'll be right back\""),
+        "t falls back to the script's default when the setting is off:\n{screen}"
+    );
+}
+
+const EXPANDED_ALIASES: &str = r#"{
+  "_comment": "Hand-kept notes. The layout below is on purpose.",
+  "campaign": "Demo",
+  "system": "daggerheart",
+  "discord_names": {
+    "gmperson": {
+      "player": "Sky",
+      "character": null,
+      "role": "GM"
+    },
+    "riverone": {
+      "player": "Pat",
+      "character": "Mara_Quill",
+      "role": "Player"
+    },
+    "rivertwo": {
+      "player": "Lee",
+      "character": "Tomas_Ink",
+      "role": "Player"
+    }
+  },
+  "players": {"Mara Quill": "Pat", "Tomas Ink": "Lee"}
+}
+"#;
+
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent {
+        modifiers: KeyModifiers::CONTROL,
+        ..key(KeyCode::Char(c))
+    }
+}
+
+impl Rig {
+    fn aliases_path(&self) -> PathBuf {
+        self.tmp.path().join("vault/0.2_campaigns/demo/canon_aliases.json")
+    }
+
+    /// Use a hand-formatted alias file and reopen the app on it.
+    fn with_aliases(&mut self, body: &str) {
+        fs::write(self.aliases_path(), body).unwrap();
+        self.restart();
+    }
+
+    fn type_text(&mut self, s: &str) {
+        for c in s.chars() {
+            self.press(c);
+        }
+    }
+}
+
+fn labels_in(path: &str) -> Vec<String> {
+    let mut out: Vec<String> = fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter_map(|l| l.strip_prefix("**["))
+        .filter_map(|l| l.split_once("] "))
+        .filter_map(|(_, rest)| rest.split_once(":**").map(|(label, _)| label.to_string()))
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn resolving_unknown_speakers_changes_only_the_appended_lines_and_the_next_run_uses_the_new_names() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.with_aliases(EXPANDED_ALIASES);
+    rig.five_tracks();
+    rig.choose_all_in_downloads();
+    assert_eq!(rig.app.unknown_tracks(), 2);
+    assert!(rig.draw().contains("[r] Resolve"));
+
+    rig.press('r');
+    assert!(matches!(rig.app.modal, Some(Modal::Resolve(_))));
+    let form = rig.draw();
+    assert!(form.contains("> plain_0") && form.contains("newperson"), "{form}");
+    assert!(form.contains("Characters: Mara_Quill, Tomas_Ink"), "{form}");
+
+    // plain_0 is Kay, playing Wern Reed. newperson is Jo, with no character: the GM.
+    rig.type_text("Kay");
+    rig.app.on_key(key(KeyCode::Tab));
+    rig.type_text("Wern Reed");
+    rig.app.on_key(key(KeyCode::Tab));
+    rig.type_text("Jo");
+    rig.app.on_key(ctrl('s'));
+    assert!(rig.app.modal.is_none(), "saved and closed");
+
+    assert_eq!(rig.app.unknown_tracks(), 0);
+    assert!(
+        rig.app
+            .status
+            .text
+            .starts_with("Added 2 speaker(s) to demo's discord_names: plain_0, newperson."),
+        "{}",
+        rig.app.status.text
+    );
+    assert_eq!(rig.app.status.kind, StatusKind::Ok);
+    let screen = rig.draw();
+    assert!(
+        screen.contains("Wern_Reed") && screen.contains("GM (Jo)") && !screen.contains("⚠ unknown"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("all speakers resolved") || !screen.contains("unknown speaker"),
+        "{screen}"
+    );
+
+    // The file: cut the new lines out and take back the comma the last old entry gained,
+    // and the original is what is left, byte for byte.
+    let after = fs::read_to_string(rig.aliases_path()).unwrap();
+    let new_part = "    \"plain_0\": {\n      \"player\": \"Kay\",\n      \"character\": \"Wern_Reed\",\n      \"role\": \"Player\"\n    },\n    \"newperson\": {\n      \"player\": \"Jo\",\n      \"character\": null,\n      \"role\": \"GM\"\n    }\n";
+    assert!(after.contains(new_part), "{after}");
+    let restored = after
+        .replace(new_part, "")
+        .replacen("    },\n  },\n", "    }\n  },\n", 1);
+    assert_eq!(
+        restored, EXPANDED_ALIASES,
+        "only the appended lines (and one comma) changed"
+    );
+    let value: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(value["discord_names"]["plain_0"]["character"], "Wern_Reed");
+    assert_eq!(value["discord_names"]["newperson"]["role"], "GM");
+    assert_eq!(value["players"]["Tomas Ink"], "Lee");
+
+    // The next run labels the tracks with the new names.
+    rig.start_and_confirm();
+    rig.pump_until("the job to finish", |a| !a.running());
+    let report = rig.app.report.clone().unwrap();
+    assert!(report.ok(), "{report:?}");
+    let labels = labels_in(report.transcript_md.as_deref().unwrap());
+    assert_eq!(labels, ["GM", "Mara_Quill", "Tomas_Ink", "Wern_Reed"], "{labels:?}");
+}
+
+#[test]
+fn resolving_says_what_went_wrong_and_never_writes_a_half_file() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.with_aliases(EXPANDED_ALIASES);
+    rig.tone("4-plain_0.flac");
+    rig.tone("5-newperson.flac");
+    rig.choose_all_in_downloads();
+    let before = fs::read_to_string(rig.aliases_path()).unwrap();
+
+    // Saving an empty form does nothing but say so.
+    rig.press('r');
+    rig.app.on_key(ctrl('s'));
+    assert!(matches!(rig.app.modal, Some(Modal::Resolve(_))));
+    assert!(rig.draw().contains("Nothing is filled in."));
+    // Esc with nothing typed closes without a word.
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(rig.app.modal.is_none());
+
+    // Typing then Esc asks first; the second Esc discards.
+    rig.press('r');
+    rig.type_text("Kay");
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(matches!(rig.app.modal, Some(Modal::Resolve(_))));
+    assert!(rig.draw().contains("Esc again discards"));
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(rig.app.modal.is_none());
+    assert_eq!(
+        fs::read_to_string(rig.aliases_path()).unwrap(),
+        before,
+        "nothing written so far"
+    );
+
+    // The file went bad since the app loaded it: the form stays open with the reason,
+    // and the file is left exactly as it is.
+    rig.press('r');
+    rig.type_text("Kay");
+    fs::write(rig.aliases_path(), "{ this is not json").unwrap();
+    rig.app.on_key(ctrl('s'));
+    assert!(matches!(rig.app.modal, Some(Modal::Resolve(_))), "still open");
+    let screen = rig.draw();
+    assert!(screen.contains("is not valid JSON"), "{screen}");
+    assert_eq!(fs::read_to_string(rig.aliases_path()).unwrap(), "{ this is not json");
+    rig.app.on_key(key(KeyCode::Esc));
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(rig.app.modal.is_none());
+    assert_eq!(rig.app.unknown_tracks(), 2, "nothing changed in the app either");
+}
+
+#[test]
+fn a_name_already_listed_without_a_character_is_left_alone_and_said_so() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    // newperson is in the file, but with no character and no GM role: the script still
+    // calls the track unknown. The append never overwrites, so the person must edit it.
+    let body = EXPANDED_ALIASES.replace(
+        "  \"discord_names\": {\n",
+        "  \"discord_names\": {\n    \"newperson\": {\"player\": \"Jo\"},\n",
+    );
+    rig.with_aliases(&body);
+    rig.tone("5-newperson.flac");
+    rig.tone("4-plain_0.flac");
+    rig.choose_all_in_downloads();
+    assert_eq!(rig.app.unknown_tracks(), 2);
+    rig.press('r');
+    // Row 0 is plain_0 (leave it), row 1 is newperson.
+    rig.app.on_key(key(KeyCode::Down));
+    rig.type_text("Someone Else");
+    rig.app.on_key(ctrl('s'));
+    assert!(rig.app.modal.is_none());
+    let status = rig.app.status.text.clone();
+    assert!(status.contains("Nothing was added"), "{status}");
+    assert!(
+        status.contains("Left alone, already listed without a character or GM role: newperson"),
+        "{status}"
+    );
+    assert!(status.contains("2 track(s) still unknown"), "{status}");
+    assert_eq!(rig.app.status.kind, StatusKind::Warn);
+    assert_eq!(fs::read_to_string(rig.aliases_path()).unwrap(), body, "not touched");
+}
+
+#[test]
+fn resolve_is_refused_while_a_job_runs() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_SLEEP", "25.7")]);
+    rig.tone("1-gmperson.flac");
+    rig.tone("5-newperson.flac");
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    rig.pump_until("the first track", |a| a.tracker.label().starts_with("File 1 / 2"));
+    rig.press('r');
+    assert!(rig.app.modal.is_none());
+    assert_eq!(rig.app.status.text, "A job is running.");
+    rig.press('x');
+    rig.pump_until("cancel", |a| !a.running());
 }

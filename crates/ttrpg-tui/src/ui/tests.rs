@@ -160,7 +160,7 @@ fn idle_screen_shows_the_three_panes_and_the_buttons() {
         "[x] Cancel",
         "[o] Open folder",
         "[c] Clear files",
-        "[r] Rescan",
+        "[r] Resolve",
         "[?] Help",
         "[q] Quit",
         "Press f to choose the Craig audio files",
@@ -466,6 +466,72 @@ fn the_log_says_when_it_is_scrolled_back_and_how_to_follow() {
 }
 
 #[test]
+fn whisper_segment_lines_are_dim_and_the_scripts_own_lines_are_not() {
+    let mut w = world(true);
+    let tx = w.scripted_job();
+    tx.send(PipelineEvent::Log("Session folder: /somewhere".into()))
+        .unwrap();
+    tx.send(PipelineEvent::Log(
+        "[00:00:00.000 --> 00:00:30.000]   Thank you.".into(),
+    ))
+    .unwrap();
+    tx.send(PipelineEvent::Log(
+        "[00:00:30.000 --> 00:00:41.200]   The lantern is lit.".into(),
+    ))
+    .unwrap();
+    tx.send(PipelineEvent::Log(
+        "ERROR: whisper-cli failed on: 3-rivertwo.flac".into(),
+    ))
+    .unwrap();
+    w.app.poll_job();
+    let mut term = Terminal::new(TestBackend::new(130, 32)).unwrap();
+    term.draw(|f| draw(f, &mut w.app)).unwrap();
+    let buf = term.backend().buffer();
+    // Find the first cell of each line by its text.
+    let at = |needle: &str| -> (u16, u16) {
+        for y in 0..buf.area.height {
+            let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+            if let Some(col) = row.find(needle) {
+                let x = row[..col].chars().count() as u16;
+                return (x, y);
+            }
+        }
+        panic!("{needle} is not on screen");
+    };
+    let (x, y) = at("[00:00:00.000");
+    assert!(cell_has(buf, x, y, Modifier::DIM), "a whisper segment line is dim");
+    let (x, y) = at("The lantern is lit.");
+    assert!(
+        cell_has(buf, x, y, Modifier::DIM),
+        "the whole line is dim, text included"
+    );
+    let (x, y) = at("Session folder:");
+    assert!(!cell_has(buf, x, y, Modifier::DIM), "the script's own line is normal");
+    let (x, y) = at("ERROR: whisper-cli failed");
+    assert!(!cell_has(buf, x, y, Modifier::DIM));
+    assert_eq!(buf[(x, y)].fg, Color::Red, "errors keep their colour");
+}
+
+#[test]
+fn a_long_log_line_keeps_its_style_on_every_row_it_wraps_to() {
+    let mut w = world(true);
+    let tx = w.scripted_job();
+    tx.send(PipelineEvent::Log(format!("ERROR: {}", "boom ".repeat(60))))
+        .unwrap();
+    w.app.poll_job();
+    let mut term = Terminal::new(TestBackend::new(130, 32)).unwrap();
+    term.draw(|f| draw(f, &mut w.app)).unwrap();
+    let buf = term.backend().buffer();
+    let red_rows = (0..buf.area.height)
+        .filter(|&y| (0..buf.area.width).any(|x| buf[(x, y)].symbol() == "b" && buf[(x, y)].fg == Color::Red))
+        .count();
+    assert!(
+        red_rows >= 3,
+        "a 300-character line wraps over several rows, all red: {red_rows}"
+    );
+}
+
+#[test]
 fn the_transcript_tab_styles_speaker_headers_and_hides_markdown() {
     let mut w = world(true);
     let sp = w.app.session_paths().unwrap();
@@ -555,6 +621,178 @@ fn zoom_gives_the_preview_the_whole_screen_and_esc_restores() {
         ..key('x')
     });
     assert!(render(&mut w.app, 130, 32).contains("Campaigns (2)"));
+}
+
+// -- resolving unknown speakers ---------------------------------------------------------------
+
+fn ctrl_key(c: char) -> KeyEvent {
+    KeyEvent {
+        modifiers: KeyModifiers::CONTROL,
+        ..key(c)
+    }
+}
+
+fn type_str(app: &mut App, s: &str) {
+    for c in s.chars() {
+        app.on_key(key(c));
+    }
+}
+
+#[test]
+fn the_resolve_button_is_dim_until_a_track_is_unknown_and_says_why() {
+    let mut w = world(true);
+    w.choose(&["1-gmperson.flac", "2-riverone.flac"]);
+    assert!(!w.app.enabled(Action::Resolve));
+    w.press('r');
+    assert!(w.app.modal.is_none());
+    assert_eq!(w.app.status.text, "Every track already has a speaker.");
+    w.choose(&["1-gmperson.flac", "3-newperson.flac"]);
+    assert!(w.app.enabled(Action::Resolve));
+    let screen = render(&mut w.app, 130, 32);
+    assert!(
+        screen.contains("[r] Resolve") && screen.contains("1 unknown speaker(s)"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn the_resolve_form_lists_the_unknown_names_the_characters_and_the_keys() {
+    let mut w = world(true);
+    w.choose(&[
+        "1-gmperson.flac",
+        "3-newperson.flac",
+        "4-otherperson.flac",
+        "5-newperson.flac",
+    ]);
+    w.press('r');
+    assert!(matches!(w.app.modal, Some(Modal::Resolve(_))));
+    let screen = render(&mut w.app, 130, 32);
+    for want in [
+        "Who is speaking?",
+        "These tracks are not in alpha's discord_names.",
+        "leave its row empty to skip it",
+        "An empty character means the GM.",
+        "TRACK",
+        "PLAYER",
+        "CHARACTER",
+        "> newperson",
+        "otherperson",
+        "Saved as discord_names key \"newperson\", from 3-newperson.flac",
+        "Characters: Mara_Quill",
+        "Ctrl-N / Ctrl-P pick a character",
+        "[Ctrl-S] Save to campaign",
+        "[Esc] Cancel",
+    ] {
+        assert!(screen.contains(want), "missing {want:?}:\n{screen}");
+    }
+    let Some(Modal::Resolve(form)) = &w.app.modal else {
+        panic!("the form is open")
+    };
+    assert_eq!(
+        form.rows.iter().map(|r| r.stem.as_str()).collect::<Vec<_>>(),
+        ["newperson", "otherperson"],
+        "one row for a name that two tracks share"
+    );
+}
+
+#[test]
+fn typing_shows_in_the_focused_field_and_the_form_fits_a_small_terminal() {
+    let mut w = world(true);
+    w.choose(&["3-newperson.flac", "4-otherperson.flac"]);
+    w.press('r');
+    type_str(&mut w.app, "Kay");
+    w.app.on_key(KeyEvent {
+        code: KeyCode::Tab,
+        ..key('x')
+    });
+    w.app.on_key(ctrl_key('n'));
+    let Some(Modal::Resolve(form)) = &w.app.modal else {
+        panic!("the form is open")
+    };
+    assert_eq!(
+        form.field(0, crate::resolve::Col::Character),
+        "Mara_Quill",
+        "Ctrl-N filled it"
+    );
+    let screen = render(&mut w.app, 80, 24);
+    assert!(screen.contains("Kay") && screen.contains("Mara_Quill"), "{screen}");
+    assert!(
+        screen.contains("[Ctrl-S] Save to campaign") && screen.contains("[Esc] Cancel"),
+        "{screen}"
+    );
+    // The focused field is highlighted, the others underlined.
+    let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    term.draw(|f| draw(f, &mut w.app)).unwrap();
+    let (rect, _, _) = w.app.hit.resolve_fields[1];
+    let buf = term.backend().buffer();
+    assert!(
+        buf[(rect.x, rect.y)].modifier.contains(Modifier::REVERSED),
+        "the character field has focus"
+    );
+    let (rect, _, _) = w.app.hit.resolve_fields[0];
+    assert!(buf[(rect.x, rect.y)].modifier.contains(Modifier::UNDERLINED));
+}
+
+#[test]
+fn many_unknown_names_scroll_with_the_selected_row_in_view() {
+    let mut w = world(true);
+    let names: Vec<String> = (1..=20).map(|i| format!("{i}-guest{i:02}.flac")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    w.choose(&refs);
+    w.press('r');
+    for _ in 0..15 {
+        w.app.on_key(KeyEvent {
+            code: KeyCode::Down,
+            ..key('x')
+        });
+    }
+    let screen = render(&mut w.app, 100, 30);
+    assert!(screen.contains("> guest16"), "{screen}");
+    assert!(screen.contains("row 16 of 20"), "{screen}");
+    assert!(
+        !screen.contains("guest01 "),
+        "the first rows have scrolled out:\n{screen}"
+    );
+}
+
+#[test]
+fn clicking_a_field_focuses_it_and_clicking_save_writes_the_file() {
+    let mut w = world(true);
+    w.choose(&["3-newperson.flac"]);
+    w.press('r');
+    render(&mut w.app, 130, 32);
+    let (rect, row, col) = w.app.hit.resolve_fields[1];
+    assert_eq!((row, col), (0, crate::resolve::Col::Character));
+    let click = |app: &mut App, x: u16, y: u16| {
+        app.on_mouse(ratatui::crossterm::event::MouseEvent {
+            kind: ratatui::crossterm::event::MouseEventKind::Down(ratatui::crossterm::event::MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        });
+    };
+    click(&mut w.app, rect.x + 1, rect.y);
+    type_str(&mut w.app, "Zed Wick");
+    render(&mut w.app, 130, 32);
+    let save = w.app.hit.resolve_save;
+    assert!(save.width > 0);
+    click(&mut w.app, save.x + 1, save.y);
+    assert!(w.app.modal.is_none());
+    let file = fs::read_to_string(w.path("vault/0.2_campaigns/alpha/canon_aliases.json")).unwrap();
+    assert!(
+        file.contains("\"newperson\": {\"player\": null, \"character\": \"Zed_Wick\", \"role\": \"Player\"}"),
+        "{file}"
+    );
+    assert!(
+        w.app
+            .status
+            .text
+            .starts_with("Added 1 speaker(s) to alpha's discord_names: newperson."),
+        "{}",
+        w.app.status.text
+    );
+    assert_eq!(w.app.unknown_tracks(), 0);
+    assert!(render(&mut w.app, 130, 32).contains("Zed_Wick"));
 }
 
 // -- dialogs ---------------------------------------------------------------------------------------------

@@ -23,6 +23,7 @@ use crate::error::CampaignError;
 use crate::progress::{ProgressEvent, parse_progress_line};
 use crate::settings::{Settings, Sourced};
 use crate::state::read_state_rows;
+use crate::stock::StockRule;
 
 /// Seconds between asking the script to stop and forcing it.
 const GRACE: Duration = Duration::from_secs(3);
@@ -49,9 +50,29 @@ pub struct JobPlan {
     pub program: String,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
+    /// The stock-phrase rule this run will use (already in `args`).
+    pub stock: StockRule,
 }
 
 impl JobPlan {
+    /// The same plan with a different stock-phrase rule, for turning it off or on
+    /// for one run from the confirm step.
+    pub fn with_stock_rule(mut self, rule: StockRule) -> Self {
+        let mut kept = Vec::with_capacity(self.args.len());
+        let mut it = std::mem::take(&mut self.args).into_iter();
+        while let Some(a) = it.next() {
+            if a == "--stock-phrases" || a == "--stock-min-seconds" {
+                it.next(); // its value
+            } else {
+                kept.push(a);
+            }
+        }
+        kept.extend(rule.script_args());
+        self.args = kept;
+        self.stock = rule;
+        self
+    }
+
     /// Tracks the script will find: what is already there plus what is moved in.
     pub fn track_count(&self) -> usize {
         self.existing.len() + self.moves.len()
@@ -141,6 +162,8 @@ pub fn plan_job(
     if let Some(model) = settings.whisper_model()? {
         args.extend(["-m".into(), model.value]);
     }
+    let stock = settings.stock_rule()?;
+    args.extend(stock.script_args());
 
     Ok(JobPlan {
         slug: campaign.slug.clone(),
@@ -157,6 +180,7 @@ pub fn plan_job(
         program: "bash".into(),
         args,
         env: settings.env_vars().clone(),
+        stock,
     })
 }
 

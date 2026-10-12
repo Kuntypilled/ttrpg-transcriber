@@ -102,6 +102,25 @@ priority.
 | `q` while a job runs warns first; a second `q` cancels the job and then quits | Quitting must not leave whisper-cli running |
 | Tool locations are settings (`whisper_bin`, `whisper_model`, `legacy_dir`) | `transcribe.sh` took them as flags the GUI never passed |
 
+### Milestone 3: unknown speakers
+
+| Difference | Why |
+|---|---|
+| The key for resolving is `r` (PORTING.md's suggestion); rescanning moved to `R` and left the button bar | The button bar is full |
+| New `discord_names` entries are laid out like the entries already in the file: the same indent, and spread over lines if the existing ones are. The original always wrote four spaces and one line | A hand-formatted file should not get one entry in a different style. Files laid out the original's way get identical bytes (tested) |
+| The `discord_names` object is found by reading the JSON, so a nested object of the same name earlier in the file is not mistaken for it; a file with the key twice at the top level is refused | The original took the first `"key": {` anywhere in the text; its own check then aborted, so the result was a failed save |
+| Windows line endings are kept, and new lines use them | The original read in text mode and rewrote the whole file with bare `\n` |
+| The file is written to a temporary neighbour and renamed over | A crash cannot leave half a file |
+| After splicing, every added entry is also checked to read back as given | One more check than the original's |
+| A stem the file already lists, without a character or a GM role, is left alone and the status says so | The original reported an empty "Added to ..." and the track stayed unknown with no explanation. The script treats such a track as unknown, so the app does too |
+| Esc with something typed asks first; saving an empty form says so instead of closing | The original dialog discarded silently |
+| Resolving is refused while a job runs | The script reads the alias file for each track, so a change mid-run could label tracks differently |
+
+Known limits of milestone 3: the form edits only `discord_names`. A character that is
+not in `players` is accepted as typed (the original did the same), so a typo makes a
+new character. The line-up of columns inside the file's entries is not copied: only
+the indent and the line layout are.
+
 Known limits of milestone 2:
 
 - Progress is per track. A single track shows a spinner and elapsed time. The real
@@ -109,7 +128,7 @@ Known limits of milestone 2:
 - Unknown speakers can be seen but not added from inside the app (milestone 3). The
   script labels such a track by its file name.
 - `--force`, `--post-process-only`, `--cleanup`, `--ignore-words` and `-mc` are not
-  exposed yet.
+  exposed yet. The two stock-phrase options are (settings, and `t` at the confirm step).
 - `transcribe.sh` still transcribes every audio file in the session folder, not only
   the ones chosen in this run, and the list in the app shows both.
 - The picker lists only folders and audio files. A Craig `.zip` has to be unpacked first.

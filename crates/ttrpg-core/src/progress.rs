@@ -134,6 +134,21 @@ impl Tracker {
     }
 }
 
+/// True for a segment line whisper-cli prints to stdout while it works:
+/// `[00:00:30.000 --> 00:01:00.000]   Thank you.` The script does not redirect
+/// whisper's stdout, so these reach the log. They are raw, unfiltered output, and
+/// the app shows them dimmed so the script's own lines stand out.
+pub fn is_whisper_segment_line(line: &str) -> bool {
+    // `[hh:mm:ss.mmm --> hh:mm:ss.mmm]`: 31 bytes of fixed shape.
+    const SHAPE: &[u8; 31] = b"[dd:dd:dd.ddd --> dd:dd:dd.ddd]";
+    let b = line.trim_start().as_bytes();
+    b.len() >= SHAPE.len()
+        && b.iter().zip(SHAPE).all(|(got, want)| match want {
+            b'd' => got.is_ascii_digit(),
+            other => got == other,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +260,28 @@ mod tests {
             name: "x".into(),
         });
         assert!(t.fraction().is_finite());
+    }
+
+    #[test]
+    fn recognises_whisper_segment_lines_and_nothing_else() {
+        for yes in [
+            "[00:00:00.000 --> 00:00:30.000]   Thank you.",
+            "  [01:02:03.450 --> 01:02:09.999]  The lantern is lit.",
+            "[00:00:30.000 --> 00:01:00.000]",
+        ] {
+            assert!(is_whisper_segment_line(yes), "{yes}");
+        }
+        for no in [
+            "",
+            "Session folder: /x",
+            "PROGRESS:done:1/5:a.flac",
+            "[00:00:00.000 -> 00:00:30.000] one dash short",
+            "[0:00:00.000 --> 00:00:30.000] one digit short",
+            "[00:00:00,000 --> 00:00:30,000] comma, not a dot",
+            "see [00:00:00.000 --> 00:00:30.000] mid-line",
+            "[ok] [00:00:00.000 --> 00:00:30.000]",
+        ] {
+            assert!(!is_whisper_segment_line(no), "{no}");
+        }
     }
 }

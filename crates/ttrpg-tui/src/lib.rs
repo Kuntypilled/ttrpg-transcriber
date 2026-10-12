@@ -4,5 +4,6 @@
 pub mod app;
 pub mod log;
 pub mod picker;
+pub mod resolve;
 pub mod text;
 pub mod ui;

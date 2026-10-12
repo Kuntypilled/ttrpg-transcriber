@@ -18,7 +18,8 @@ carries the one local change listed below. Do not edit them otherwise.
 `--stock-phrases`, `--stock-min-seconds`). A line that is exactly "thank you" or
 "we'll be right back" is dropped when it lasts 20 s or more, after duplicate lines
 have been collapsed. Whisper invents these on silent stretches, one per 30 s window.
-A run that drops nothing logs and outputs exactly what the original did. The
+A run that drops nothing logs and outputs what the original did, plus one extra
+`Stock    :` line in the banner that says which phrases are active. The
 reasoning and the evidence are in `ERRATA.md`; the tests are
 `crates/ttrpg-core/tests/stock_phrases.rs`. The original repo is unchanged.
 

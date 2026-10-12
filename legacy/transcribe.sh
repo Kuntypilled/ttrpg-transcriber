@@ -792,6 +792,11 @@ log INFO "Temp     : $TEMP_DIR"
 log INFO "Model    : $MODEL_PATH"
 log INFO "Force    : $FORCE | PostOnly: $POST_PROCESS_ONLY | Cleanup: $CLEANUP"
 log INFO "Filter   : ${IGNORE_WORDS[*]}"
+if (( ${#STOCK_PHRASES[@]} > 0 )); then
+    log INFO "Stock    : $(IFS=,; echo "${STOCK_PHRASES[*]}") when ${STOCK_MIN_SECONDS} s or more"
+else
+    log INFO "Stock    : off"
+fi
 
 # ── Transcription Phase ────────────────────────────────────────────────────────
 

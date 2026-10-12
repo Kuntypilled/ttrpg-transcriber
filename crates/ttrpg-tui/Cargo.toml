@@ -13,4 +13,5 @@ ttrpg-core = { version = "0.1.0", path = "../ttrpg-core" }
 unicode-width = "0.2.2"
 
 [dev-dependencies]
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
 tempfile = "3.27.0"

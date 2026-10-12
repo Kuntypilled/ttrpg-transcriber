@@ -18,11 +18,12 @@ use ratatui::widgets::ListState;
 use ttrpg_core::audio::{Speaker, list_audio_files, natural_cmp, resolve_speaker};
 use ttrpg_core::preflight::{PreflightReport, preflight};
 use ttrpg_core::{
-    Campaign, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, Tracker, execute, legacy, list_campaigns,
-    plan_job,
+    Campaign, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, StockRule, Tracker, execute, legacy,
+    list_campaigns, plan_job, save_speakers,
 };
 
 use crate::picker::{FilePicker, Outcome};
+use crate::resolve::{self, Col, ResolveForm};
 use crate::text;
 
 /// Each campaign takes two terminal rows in the list: the name, then `slug · characters`.
@@ -87,6 +88,7 @@ impl Tab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     ChooseFiles,
+    Resolve,
     Start,
     Cancel,
     OpenFolder,
@@ -102,6 +104,8 @@ pub enum Modal {
     Setup,
     Confirm(Box<JobPlan>),
     Picker(Box<FilePicker>),
+    /// Who is speaking on the tracks `discord_names` does not know.
+    Resolve(Box<ResolveForm>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,6 +160,11 @@ pub struct Hit {
     pub buttons: Vec<(Rect, Action)>,
     pub confirm_ok: Rect,
     pub confirm_cancel: Rect,
+    pub confirm_stock: Rect,
+    /// Where each field of the resolve form is drawn, and its Save and Cancel buttons.
+    pub resolve_fields: Vec<(Rect, usize, Col)>,
+    pub resolve_save: Rect,
+    pub resolve_cancel: Rect,
 }
 
 pub type Opener = Box<dyn Fn(&str) -> std::io::Result<()>>;
@@ -571,6 +580,7 @@ impl App {
                 .session_paths()
                 .is_some_and(|sp| Path::new(&sp.session_dir).is_dir()),
             Action::ClearFiles => idle && !self.chosen.is_empty(),
+            Action::Resolve => idle && self.campaign().is_some() && self.unknown_tracks() > 0,
             Action::Rescan => idle,
             Action::Help | Action::Quit => true,
         }
@@ -595,6 +605,7 @@ impl App {
                 self.refresh_tracks();
                 self.set_status(StatusKind::Info, "Cleared the chosen files.");
             }
+            Action::Resolve => self.open_resolve(),
             Action::Rescan => self.rescan(),
             Action::Help => self.modal = Some(Modal::Help),
             Action::Quit => self.request_quit(),
@@ -604,7 +615,11 @@ impl App {
     /// A disabled button says why, instead of doing nothing.
     fn explain_disabled(&mut self, action: Action) {
         let why = match action {
-            Action::ChooseFiles | Action::Rescan | Action::ClearFiles if self.running() => "A job is running.",
+            Action::ChooseFiles | Action::Rescan | Action::ClearFiles | Action::Resolve if self.running() => {
+                "A job is running."
+            }
+            Action::Resolve if self.campaign().is_none() => "Pick a campaign first.",
+            Action::Resolve => "Every track already has a speaker.",
             Action::ChooseFiles => "Pick a campaign first.",
             Action::Start if self.running() => "A job is already running.",
             Action::Start if self.campaign().is_none() => "Pick a campaign first.",
@@ -663,6 +678,21 @@ impl App {
             Ok(plan) => self.modal = Some(Modal::Confirm(Box::new(plan))),
             Err(e) => self.set_status(StatusKind::Error, e.0),
         }
+    }
+
+    /// Flip the stock-phrase rule for this run only. Off turns it off; on goes back to
+    /// what the settings say, or to the script's default if the settings turned it off.
+    fn with_stock_toggled(&self, plan: JobPlan) -> JobPlan {
+        let next = if plan.stock.enabled() {
+            plan.stock.off()
+        } else {
+            self.settings
+                .stock_rule()
+                .ok()
+                .filter(StockRule::enabled)
+                .unwrap_or_default()
+        };
+        plan.with_stock_rule(next)
     }
 
     /// Start the job on its own thread. The UI never waits for it.
@@ -819,8 +849,15 @@ impl App {
     pub fn on_key(&mut self, key: KeyEvent) {
         self.dirty = true;
         if key.modifiers.contains(KeyModifiers::CONTROL) {
-            if key.code == KeyCode::Char('c') && self.modal.take().is_none() {
-                self.on_interrupt();
+            if key.code == KeyCode::Char('c') {
+                if self.modal.take().is_none() {
+                    self.on_interrupt();
+                }
+            } else if matches!(self.modal, Some(Modal::Resolve(_))) {
+                // The resolve form is the one place Ctrl keys mean something else.
+                if let Some(modal) = self.modal.take() {
+                    self.modal_key(modal, key);
+                }
             }
             return;
         }
@@ -844,7 +881,8 @@ impl App {
             KeyCode::Char('x') => self.do_action(Action::Cancel),
             KeyCode::Char('o') => self.do_action(Action::OpenFolder),
             KeyCode::Char('c') => self.do_action(Action::ClearFiles),
-            KeyCode::Char('r') => self.do_action(Action::Rescan),
+            KeyCode::Char('r') => self.do_action(Action::Resolve),
+            KeyCode::Char('R') => self.do_action(Action::Rescan),
             KeyCode::Char('z') => self.toggle_zoom(),
             KeyCode::Esc if self.zoom => self.zoom = false,
             KeyCode::Char('n') => self.begin_edit(),
@@ -927,6 +965,7 @@ impl App {
             Modal::Confirm(plan) => match key.code {
                 KeyCode::Enter | KeyCode::Char('y') => self.launch(*plan),
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {}
+                KeyCode::Char('t') => self.modal = Some(Modal::Confirm(Box::new(self.with_stock_toggled(*plan)))),
                 _ => self.modal = Some(Modal::Confirm(plan)),
             },
             Modal::Picker(mut picker) => match picker.on_key(key) {
@@ -934,7 +973,92 @@ impl App {
                 Outcome::Cancel => self.picker_dir = Some(picker.dir.clone()),
                 Outcome::Done(files) => self.picked(files, picker.dir.clone()),
             },
+            Modal::Resolve(mut form) => match form.on_key(key) {
+                resolve::Outcome::Open => self.modal = Some(Modal::Resolve(form)),
+                resolve::Outcome::Cancel => {}
+                resolve::Outcome::Save => self.save_resolve(form),
+            },
         }
+    }
+
+    // -- unknown speakers --------------------------------------------------------------
+
+    /// One row per distinct unknown Discord name among the tracks, with a file that has it.
+    fn unknown_speakers(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        for t in &self.tracks {
+            if let Speaker::Unknown { stem, .. } = &t.speaker
+                && !out.iter().any(|(s, _)| s == stem)
+            {
+                out.push((stem.clone(), t.name.clone()));
+            }
+        }
+        out
+    }
+
+    fn open_resolve(&mut self) {
+        let Some(camp) = self.campaign() else { return };
+        let form = ResolveForm::new(&camp.slug, self.unknown_speakers(), camp.pcs());
+        self.modal = Some(Modal::Resolve(Box::new(form)));
+    }
+
+    /// Write the filled-in rows into the campaign's `discord_names`, reload the campaign
+    /// and re-label the tracks. A failure keeps the form open with the reason.
+    fn save_resolve(&mut self, mut form: Box<ResolveForm>) {
+        if form.filled() == 0 {
+            form.message = Some("Nothing is filled in. Type a player or a character, or press Esc.".into());
+            self.modal = Some(Modal::Resolve(form));
+            return;
+        }
+        let Some(camp) = self.campaign() else { return };
+        let slug = camp.slug.clone();
+        let report = match save_speakers(camp, &form.inputs()) {
+            Ok(r) => r,
+            Err(e) => {
+                form.message = Some(e.0);
+                self.modal = Some(Modal::Resolve(form));
+                return;
+            }
+        };
+        let reloaded = Campaign::load(&self.settings, &slug);
+        match (reloaded, self.list_state.selected()) {
+            (Ok(c), Some(i)) if i < self.campaigns.len() => self.campaigns[i].1 = c,
+            (Err(e), _) => {
+                self.set_status(
+                    StatusKind::Error,
+                    format!("Saved, but {slug} could not be reloaded: {}", e.0),
+                );
+                return;
+            }
+            _ => {}
+        }
+        self.refresh_tracks();
+        let mut msg = if report.added.is_empty() {
+            "Nothing was added: those names are already in discord_names.".to_string()
+        } else {
+            self.push_log(&format!("Added to {slug} discord_names: {}", report.added.join(", ")));
+            format!(
+                "Added {} speaker(s) to {slug}'s discord_names: {}.",
+                report.added.len(),
+                report.added.join(", ")
+            )
+        };
+        if !report.left_alone.is_empty() {
+            msg.push_str(&format!(
+                " Left alone, already listed without a character or GM role: {}. Edit canon_aliases.json for those.",
+                report.left_alone.join(", ")
+            ));
+        }
+        let still = self.unknown_tracks();
+        if still > 0 {
+            msg.push_str(&format!(" {still} track(s) still unknown."));
+        }
+        let kind = if still == 0 && !report.added.is_empty() {
+            StatusKind::Ok
+        } else {
+            StatusKind::Warn
+        };
+        self.set_status(kind, msg);
     }
 
     fn picked(&mut self, files: Vec<PathBuf>, dir: PathBuf) {
@@ -947,7 +1071,7 @@ impl App {
         let (kind, msg) = if unknown > 0 {
             (
                 StatusKind::Warn,
-                format!("{n} file(s) chosen; {unknown} unknown speaker(s). s starts."),
+                format!("{n} file(s) chosen; {unknown} unknown speaker(s). r resolves them, s starts."),
             )
         } else {
             (
@@ -1035,6 +1159,8 @@ impl App {
             Modal::Confirm(plan) => {
                 if left_click && self.hit.confirm_ok.contains(pos) {
                     self.launch(*plan);
+                } else if left_click && self.hit.confirm_stock.contains(pos) {
+                    self.modal = Some(Modal::Confirm(Box::new(self.with_stock_toggled(*plan))));
                 } else if !(left_click && self.hit.confirm_cancel.contains(pos)) {
                     self.modal = Some(Modal::Confirm(plan));
                 }
@@ -1044,6 +1170,24 @@ impl App {
                 Outcome::Cancel => self.picker_dir = Some(picker.dir.clone()),
                 Outcome::Done(files) => self.picked(files, picker.dir.clone()),
             },
+            Modal::Resolve(mut form) => {
+                if !left_click {
+                    self.modal = Some(Modal::Resolve(form));
+                } else if self.hit.resolve_save.contains(pos) {
+                    self.save_resolve(form);
+                } else if self.hit.resolve_cancel.contains(pos) {
+                    // The same as Esc: it asks first when something is typed.
+                    let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+                    if form.on_key(esc) == resolve::Outcome::Open {
+                        self.modal = Some(Modal::Resolve(form));
+                    }
+                } else {
+                    if let Some((_, row, col)) = self.hit.resolve_fields.iter().find(|(r, _, _)| r.contains(pos)) {
+                        form.focus(*row, *col);
+                    }
+                    self.modal = Some(Modal::Resolve(form));
+                }
+            }
         }
     }
 }

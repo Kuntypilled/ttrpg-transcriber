@@ -23,6 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Gauge, List, ListItem, Paragraph, Wrap};
 use ttrpg_core::Campaign;
 use ttrpg_core::audio::Speaker;
+use ttrpg_core::is_whisper_segment_line;
 
 use crate::app::{Action, App, Focus, Hit, StatusKind, Tab};
 use crate::text;
@@ -474,14 +475,27 @@ fn log_view(app: &mut App, inner: Rect) -> (Vec<Line<'static>>, usize) {
         };
         return (vec![Line::from(Span::styled(hint, DIM))], 0);
     }
-    let wrapped = text::wrap(app.log.iter().map(String::as_str), usize::from(inner.width));
+    // Style each source line once, then wrap it, so a long line keeps its style on
+    // every row it wraps to. Whisper's own segment lines are raw output (they still
+    // contain the invented "Thank you." lines the script cleans up afterwards), so
+    // they are dimmed to let the script's lines stand out.
+    let width = usize::from(inner.width);
+    let mut wrapped: Vec<(String, Style)> = Vec::new();
+    for line in &app.log {
+        let style = if is_whisper_segment_line(line) {
+            DIM
+        } else {
+            log_style(line)
+        };
+        wrapped.extend(text::wrap([line.as_str()], width).into_iter().map(|l| (l, style)));
+    }
     let height = usize::from(inner.height);
     app.log_back = app.log_back.min(wrapped.len().saturating_sub(height));
     let end = wrapped.len() - app.log_back;
     let start = end.saturating_sub(height);
     let lines = wrapped[start..end]
         .iter()
-        .map(|l| Line::from(Span::styled(l.clone(), log_style(l))))
+        .map(|(l, style)| Line::from(Span::styled(l.clone(), *style)))
         .collect();
     (lines, app.log_back)
 }
@@ -595,11 +609,11 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
 fn draw_buttons(frame: &mut Frame, area: Rect, app: &mut App) {
     let buttons: [(char, &str, Action); 8] = [
         ('f', "Files", Action::ChooseFiles),
+        ('r', "Resolve", Action::Resolve),
         ('s', "Start", Action::Start),
         ('x', "Cancel", Action::Cancel),
         ('o', "Open folder", Action::OpenFolder),
         ('c', "Clear files", Action::ClearFiles),
-        ('r', "Rescan", Action::Rescan),
         ('?', "Help", Action::Help),
         ('q', "Quit", Action::Quit),
     ];

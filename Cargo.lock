@@ -1801,6 +1801,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ratatui",
+ "serde_json",
  "tempfile",
  "textwrap",
  "ttrpg-core",
