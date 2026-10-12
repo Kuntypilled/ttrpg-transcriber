@@ -1,5 +1,10 @@
 # Session Transcriber
 
+> **Archived.** The GTK GUI in this repository is replaced by a terminal program written
+> in Rust: <https://github.com/Kuntypilled/ttrpg_transcriber_tui>. The scripts here still
+> work as described below. See [ARCHIVED.md](ARCHIVED.md) for what moved where and what
+> carries over.
+
 A four-stage pipeline that turns a Craig Discord multitrack recording of a tabletop RPG
 session into a searchable, canon-corrected transcript and a per-campaign vector store.
 
