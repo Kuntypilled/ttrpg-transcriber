@@ -11,7 +11,8 @@
 # Pipeline:
 #   1. Transcribe each audio track via whisper.cpp
 #   2. Add speaker column from filename (discord_names lookup → N-playername_M.ext fallback)
-#   3. Filter filler words, collapse duplicate consecutive lines
+#   3. Filter filler words, collapse duplicate consecutive lines, drop stock
+#      phrases that last a whole whisper window (see DEFAULT_STOCK_PHRASES)
 #   4. Merge all tracks sorted by timestamp → merged_transcript.tsv
 #   5. Consolidate consecutive same-speaker lines → consolidated_transcript.tsv
 #   6. Generate human-readable → transcript.md
@@ -86,6 +87,13 @@ WHISPER_PROMPT=""
 # Filler words/short phrases to drop (exact match or with trailing punctuation)
 DEFAULT_IGNORE_WORDS=("you" "silence" "um" "uh" "ah" "like" "right" "well")
 
+# Whisper invents these on a silent stretch of a track, one per 30 s window, and
+# the collapse step then stretches the repeats into one long line. A person
+# actually saying one lasts a second or two, so they are dropped only when the
+# collapsed line lasts DEFAULT_STOCK_MIN_SECONDS or more.
+DEFAULT_STOCK_PHRASES=("thank you" "we'll be right back")
+DEFAULT_STOCK_MIN_SECONDS=20
+
 # ── Usage ──────────────────────────────────────────────────────────────────────
 
 usage() {
@@ -114,6 +122,12 @@ Options:
   -p, --post-process-only     Skip transcription; re-run post-processing from archive
   -c, --cleanup               Remove temp/ directory after processing
       --ignore-words WORDS    Comma-separated filter words (replaces defaults)
+      --stock-phrases LIST    Comma-separated phrases whisper invents on silence
+                              (replaces defaults, empty turns the rule off). A
+                              line that is exactly one of them is dropped only if
+                              it lasts --stock-min-seconds or more.
+                              Default: thank you,we'll be right back
+      --stock-min-seconds N   How long such a line must last to be dropped (default: 20)
       --check                 Verify dependencies and model, then exit
   -h, --help                  Show this help
 
@@ -146,6 +160,8 @@ POST_PROCESS_ONLY=false
 CLEANUP=false
 CHECK_ONLY=false
 IGNORE_WORDS=("${DEFAULT_IGNORE_WORDS[@]}")
+STOCK_PHRASES=("${DEFAULT_STOCK_PHRASES[@]}")
+STOCK_MIN_SECONDS="$DEFAULT_STOCK_MIN_SECONDS"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -162,6 +178,13 @@ while [[ $# -gt 0 ]]; do
         -p|--post-process-only) POST_PROCESS_ONLY=true; shift ;;
         -c|--cleanup)           CLEANUP=true;         shift   ;;
         --ignore-words)         IFS=',' read -ra IGNORE_WORDS <<< "$2"; shift 2 ;;
+        --stock-phrases)        IFS=',' read -ra STOCK_PHRASES <<< "$2"; shift 2 ;;
+        --stock-min-seconds)
+            if [[ ! "${2:-}" =~ ^[0-9]+$ ]]; then
+                echo "ERROR: --stock-min-seconds must be a whole number, got '${2:-}'." >&2
+                exit 1
+            fi
+            STOCK_MIN_SECONDS="$2"; shift 2 ;;
         --check)                CHECK_ONLY=true;      shift   ;;
         -h|--help)              usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
@@ -381,6 +404,22 @@ should_filter() {
     return 1
 }
 
+# True when the whole line is a stock phrase and it lasts long enough to be one
+# whisper invented. Same matching as should_filter. start and end are in ms.
+is_stock_segment() {
+    local start="$1" end="$2" text="$3"
+    [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ ]] || return 1
+    (( end - start >= STOCK_MIN_SECONDS * 1000 )) || return 1
+    local stripped="${text%[.,!?;:]}"  # strip one trailing punctuation mark
+    local phrase
+    for phrase in "${STOCK_PHRASES[@]}"; do
+        if [[ "${text,,}" == "${phrase,,}" ]] || [[ "${stripped,,}" == "${phrase,,}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # ── Time Formatting (milliseconds → HH:MM:SS) ─────────────────────────────────
 
 format_time() {
@@ -416,6 +455,7 @@ process_whisper_tsv() {
     local out_file="$3"
     local filtered_count=0
     local collapsed_count=0
+    local stock_count=0
 
     local prev_text="" prev_start="" prev_end=""
     local first=true
@@ -456,7 +496,11 @@ process_whisper_tsv() {
                 prev_end="$end"
                 (( collapsed_count++ )) || true
             else
-                printf '%s\t%s\t%s\t%s\n' "$player_name" "$prev_start" "$prev_end" "$prev_text"
+                if is_stock_segment "$prev_start" "$prev_end" "$prev_text"; then
+                    (( stock_count++ )) || true
+                else
+                    printf '%s\t%s\t%s\t%s\n' "$player_name" "$prev_start" "$prev_end" "$prev_text"
+                fi
                 prev_text="$text"
                 prev_start="$start"
                 prev_end="$end"
@@ -465,12 +509,22 @@ process_whisper_tsv() {
 
         # Flush last entry
         if ! $first; then
-            printf '%s\t%s\t%s\t%s\n' "$player_name" "$prev_start" "$prev_end" "$prev_text"
+            if is_stock_segment "$prev_start" "$prev_end" "$prev_text"; then
+                (( stock_count++ )) || true
+            else
+                printf '%s\t%s\t%s\t%s\n' "$player_name" "$prev_start" "$prev_end" "$prev_text"
+            fi
         fi
 
     } > "$out_file"
 
-    log INFO "  Processed: $(basename "$out_file") — filtered: $filtered_count, collapsed: $collapsed_count"
+    # The stock-phrase count is appended only when it is not zero, so a run that
+    # drops none logs exactly what the original script logged.
+    local stock_note=""
+    if (( stock_count > 0 )); then
+        stock_note=", stock phrases dropped: $stock_count"
+    fi
+    log INFO "  Processed: $(basename "$out_file") — filtered: $filtered_count, collapsed: $collapsed_count$stock_note"
 }
 
 # ── Transcribe One Audio File ─────────────────────────────────────────────────

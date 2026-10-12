@@ -114,6 +114,39 @@ Known limits of milestone 2:
   the ones chosen in this run, and the list in the app shows both.
 - The picker lists only folders and audio files. A Craig `.zip` has to be unpacked first.
 
+## Changes to the pinned `legacy/transcribe.sh`
+
+The first and so far only one: a stock-phrase rule. Whisper invents "Thank you." on
+a silent stretch of a track, one per 30 s window, and the collapse step then joins
+the repeats into one long line. The default filter only drops whole lines equal to
+`you silence um uh ah like right well`, so these stayed in.
+
+In one real session (five tracks, 90 minutes) there were 136 such lines in the merged
+file, 133 of them on the four player tracks and 3 on the GM track, which talks most.
+In the final transcript they were 125 entries, 12% of all entries. Of the 136, 134 lasted 21 s or longer: 49 lasted 30 s, 24 lasted 60 s, 19 lasted
+90 s, and the rest ran on in further multiples up to 540 s. The other two lasted 5 s
+and 16 s. A person saying it takes a second or two. The rule therefore drops a line
+that is exactly a stock phrase (same matching as the filler words: case ignored, one
+trailing mark ignored) and lasts 20 s or more, measured after the collapse. On that
+session it drops 134 of the 136 "Thank you." lines and 2 "We'll be right back." lines
+and leaves every other line's start, end and text as they were.
+
+Limits:
+
+- It was derived from one session. Check a new session's count before trusting it.
+- A real "Thank you." that follows a run of invented ones with nothing between is
+  collapsed into the run and dropped with it.
+- A real one that whisper stretched over a whole window is dropped.
+- `--stock-phrases ""` turns the rule off; `--stock-min-seconds N` changes the length.
+  The TUI does not pass either yet.
+
+Tried and rejected: whisper.cpp `--vad`. It removed the invented lines and cut the run
+time by 46%, but it stitches a speaker's bursts of speech together and stamps the
+result from the first burst to the last. Segments of up to 925 s holding about 20
+words appeared (the longest without VAD was 35 s). For the quietest player 33% of
+words were stamped more than 30 s early; for the GM, 3.5%. The transcript stays valid
+but quiet players' lines land in the wrong scenes.
+
 Kept on purpose, because the original does it: the config file is read lazily and
 only when a value needs it, so a broken `config.json` is not an error until then;
 `whisper_device` reads the config even when the environment variable would win;
