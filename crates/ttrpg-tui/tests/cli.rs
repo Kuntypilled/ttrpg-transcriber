@@ -1,0 +1,182 @@
+//! The compiled binary: argument parsing, exit codes and stream routing, and its
+//! plain-text commands against the pinned Python original.
+
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+use tempfile::TempDir;
+
+const BIN: &str = env!("CARGO_BIN_EXE_ttrpg-tui");
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
+}
+
+struct Vault {
+    tmp: TempDir,
+}
+
+impl Vault {
+    /// Two campaigns in one world, from the invented example and a fixture.
+    fn new() -> Self {
+        let v = Vault {
+            tmp: TempDir::new().unwrap(),
+        };
+        let root = repo_root();
+        for (rel, src) in [
+            (
+                "vaults/emberfall/0.2_campaigns/main/canon_aliases.json",
+                "examples/canon_aliases.example.json",
+            ),
+            (
+                "vaults/emberfall/0.2_campaigns/side/canon_aliases.json",
+                "crates/ttrpg-core/tests/fixtures/sparse.json",
+            ),
+        ] {
+            let dest = v.tmp.path().join(rel);
+            fs::create_dir_all(dest.parent().unwrap()).unwrap();
+            fs::copy(root.join(src), dest).unwrap();
+        }
+        fs::create_dir_all(v.tmp.path().join("home")).unwrap();
+        v
+    }
+
+    fn env(&self) -> HashMap<String, String> {
+        let p = |rel: &str| self.tmp.path().join(rel).to_string_lossy().into_owned();
+        HashMap::from([
+            ("HOME".into(), p("home")),
+            ("LC_ALL".into(), "C.UTF-8".into()),
+            ("GM_VAULTS_ROOT".into(), p("vaults")),
+            ("GM_AUDIO_ROOT".into(), p("audio")),
+            ("GM_CHROMA_ROOT".into(), p("chroma")),
+            ("GM_WORK_ROOT".into(), p("work")),
+        ])
+    }
+}
+
+fn run(env: &HashMap<String, String>, args: &[&str]) -> Output {
+    Command::new(BIN)
+        .args(args)
+        .env_clear()
+        .envs(env)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap()
+}
+
+fn text(b: &[u8]) -> String {
+    String::from_utf8(b.to_vec()).unwrap()
+}
+
+#[test]
+fn list_prints_one_tab_separated_line_per_campaign() {
+    let v = Vault::new();
+    let out = run(&v.env(), &["list"]);
+    assert!(out.status.success());
+    assert_eq!(
+        text(&out.stdout),
+        "emberfall/main\tEmberfall\tdaggerheart\nemberfall/side\tTidewatch\tdnd-5e\n"
+    );
+}
+
+#[test]
+fn user_errors_go_to_stderr_with_exit_code_2() {
+    let v = Vault::new();
+    let out = run(&v.env(), &["paths", "--campaign", "emberfall/../x"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(
+        text(&out.stderr).starts_with("ERROR: 'emberfall/../x' is not a campaign id"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn doctor_exit_codes() {
+    let v = Vault::new();
+    assert_eq!(run(&v.env(), &["doctor"]).status.code(), Some(0));
+
+    let mut empty = v.env();
+    empty.insert(
+        "GM_VAULTS_ROOT".into(),
+        v.tmp.path().join("home").to_string_lossy().into_owned(),
+    );
+    assert_eq!(
+        run(&empty, &["doctor"]).status.code(),
+        Some(1),
+        "configured, no campaigns"
+    );
+
+    let bare = HashMap::from([(
+        "HOME".to_string(),
+        v.tmp.path().join("home").to_string_lossy().into_owned(),
+    )]);
+    let out = run(&bare, &["doctor"]);
+    assert_eq!(out.status.code(), Some(2), "not configured");
+    assert!(text(&out.stdout).contains("NOT CONFIGURED"));
+    assert!(text(&out.stdout).contains("Then run:  ttrpg-tui doctor"));
+}
+
+#[test]
+fn the_tui_refuses_to_start_without_a_terminal() {
+    let v = Vault::new();
+    let out = run(&v.env(), &[]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        text(&out.stderr).contains("needs an interactive terminal"),
+        "{}",
+        text(&out.stderr)
+    );
+}
+
+#[test]
+fn negative_and_zero_sessions_parse() {
+    let v = Vault::new();
+    for s in ["-5", "0", "123"] {
+        let out = run(&v.env(), &["paths", "--campaign", "emberfall/main", "--session", s]);
+        assert!(out.status.success(), "--session {s}: {}", text(&out.stderr));
+    }
+    let out = run(&v.env(), &["paths", "--campaign", "emberfall/main", "--session", "abc"]);
+    assert!(!out.status.success());
+}
+
+/// Same command through `legacy/campaign.py` and the binary: identical stdout.
+#[test]
+fn plain_commands_match_the_python_original() {
+    let Some(py) = std::env::var_os("PATH").and_then(|p| {
+        std::env::split_paths(&p)
+            .map(|d| d.join("python3"))
+            .find(|c| c.is_file())
+    }) else {
+        eprintln!("SKIPPED: python3 not found");
+        return;
+    };
+    let v = Vault::new();
+    let env = v.env();
+    let legacy = repo_root().join("legacy/campaign.py");
+    for args in [
+        &["list"][..],
+        &["paths", "--campaign", "emberfall/main"],
+        &["paths", "--campaign", "emberfall/side", "--session", "7"],
+        &["paths", "--campaign", "emberfall/main", "--session", "-5"],
+        &["whisper-device"],
+    ] {
+        let want = Command::new(&py)
+            .args(["-I", "-B"])
+            .arg(&legacy)
+            .args(args)
+            .env_clear()
+            .envs(&env)
+            .output()
+            .unwrap();
+        let got = run(&env, args);
+        assert_eq!(text(&got.stdout), text(&want.stdout), "stdout for {args:?}");
+        assert_eq!(got.status.code(), want.status.code(), "exit code for {args:?}");
+    }
+}

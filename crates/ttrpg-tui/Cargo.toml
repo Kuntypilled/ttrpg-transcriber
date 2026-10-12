@@ -1,0 +1,14 @@
+[package]
+name = "ttrpg-tui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+ratatui = "0.30.2"
+ttrpg-core = { version = "0.1.0", path = "../ttrpg-core" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

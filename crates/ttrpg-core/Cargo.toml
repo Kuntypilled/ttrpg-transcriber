@@ -1,0 +1,13 @@
+[package]
+name = "ttrpg-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+indexmap = "2.14.2"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+tempfile = "3.27.0"

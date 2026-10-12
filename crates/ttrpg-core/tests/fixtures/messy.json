@@ -1,0 +1,36 @@
+{
+    "_comment": "Invented. Every odd shape the loader has to tolerate.",
+    "display_name": "Messy Display",
+    "campaign": "messy",
+    "system": "",
+    "audio_root": "~/messy_audio",
+    "seed_prompt": "Seed words.",
+    "speaker_map": [
+        {"_comment": "a row without match is skipped"},
+        "not an object",
+        {"match": "Alice", "player": "Pat", "character": "Alice  Reed"},
+        {"match": 7, "player": null, "character": null},
+        {"match": null, "player": "X", "character": "Y Z"},
+        {"match": "GM", "player": "Sky", "character": null}
+    ],
+    "players": {
+        "A  B": "first",
+        "A B": "second",
+        "_skip": "x",
+        "C": null
+    },
+    "aliases": {
+        "_comment": "skipped",
+        "Canon One": ["v1", 2, "v3"],
+        "Not A List": "oops",
+        "Canon Two": []
+    },
+    "review_only": {
+        "Empty": []
+    },
+    "names": ["One", 2, "Three", null],
+    "discord_names": {
+        "x": {"player": "P", "character": null, "role": "GM"},
+        "y": {"player": "Q", "character": "R", "role": "Player"}
+    }
+}

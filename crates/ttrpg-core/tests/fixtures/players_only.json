@@ -1,0 +1,15 @@
+{
+    "_comment": "Invented. players but no speaker_map, so the map is derived from players then GM entries.",
+    "campaign": "Lantern Row",
+    "system": "daggerheart",
+    "players": {
+        "_comment": "skipped",
+        "Mara Quill": "Pat",
+        "Tomas Ink": "Lee",
+        "Wern  Hale": "Pat"
+    },
+    "discord_names": {
+        "gmperson": {"player": "Sky", "character": null, "role": "GM"},
+        "dupgm": {"player": "Sky", "character": null, "role": "GM"}
+    }
+}
