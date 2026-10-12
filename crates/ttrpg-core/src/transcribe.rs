@@ -1,4 +1,4 @@
-//! The transcription run (PORTING.md sections 4.2 to 4.9) in Rust, replacing
+//! The transcription run in Rust, replacing
 //! `transcribe.sh`: for each audio file, ffmpeg to a 16 kHz mono WAV, whisper-cli,
 //! the raw JSON archived, the segments filtered and collapsed; then the merged,
 //! consolidated and Markdown transcripts. The files it writes (the log and state CSVs,

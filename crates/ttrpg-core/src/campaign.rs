@@ -1,4 +1,4 @@
-//! Campaign registry, schema accessors and path rules (PORTING.md sections 3.2 to 3.4).
+//! Campaign registry, schema accessors and path rules.
 //!
 //! A campaign is any folder holding a `canon_aliases.json`. That file is the whole
 //! registry: there is no second config to keep in sync.

@@ -1,11 +1,11 @@
-//! Surgical edits of `canon_aliases.json` (PORTING.md section 3.5).
+//! Surgical edits of `canon_aliases.json`.
 //!
 //! The file is hand-maintained and its key order, column alignment and `_comment`
 //! fields are documentation, so a serde round trip (which would reformat the whole
 //! file) is not an option. New entries are spliced in as text, and the result is
 //! checked to parse and to leave every pre-existing key as it was. Ported from
 //! `append_object_entries` in `tests/oracle/campaign.py`, which the parity tests run on
-//! the same files; where this differs it is on purpose and listed in `ERRATA.md`.
+//! the same files; where this differs it is on purpose and listed in `docs/differences.md`.
 
 use serde_json::{Map, Value};
 

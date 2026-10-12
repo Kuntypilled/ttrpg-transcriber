@@ -1,7 +1,6 @@
-//! The form for tracks whose speaker the campaign does not know (PORTING.md section
-//! 7.3, "Resolve unknown speakers"): one row per unknown Discord name with a player
-//! and a character. This is only the state and the keys; saving goes through
-//! `ttrpg_core::aliases`, and drawing is in `ui/modals.rs`.
+//! The form for tracks whose speaker the campaign does not know: one row per unknown
+//! Discord name with a player and a character. This is only the state and the keys;
+//! saving goes through `ttrpg_core::aliases`, and drawing is in `ui/modals.rs`.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ttrpg_core::SpeakerInput;

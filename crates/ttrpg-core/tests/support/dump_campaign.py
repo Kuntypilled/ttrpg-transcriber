@@ -6,8 +6,8 @@ Used only by the parity tests. Usage:
 import json
 import sys
 
-legacy_dir, slug, sessions = sys.argv[1], sys.argv[2], [int(s) for s in sys.argv[3:]]
-sys.path.insert(0, legacy_dir)
+oracle_dir, slug, sessions = sys.argv[1], sys.argv[2], [int(s) for s in sys.argv[3:]]
+sys.path.insert(0, oracle_dir)
 import campaign as m  # noqa: E402
 
 c = m.load(slug)

@@ -1,5 +1,5 @@
 //! Looking at a campaign's memory store from the command line: `ttrpg-tui info` and
-//! `ttrpg-tui query` (PORTING.md section 7.4). Both run the Chroma helper
+//! `ttrpg-tui query`. Both run the Chroma helper
 //! ([`crate::index::CHROMA_HELPER`]) with the paths this program works out, so nobody has to
 //! know where the store is.
 

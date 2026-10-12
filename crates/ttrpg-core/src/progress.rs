@@ -1,5 +1,5 @@
-//! Progress of a transcription run as typed events (PORTING.md section 4.9; the original
-//! printed them as `PROGRESS:` lines), and the progress-bar arithmetic the GUI used.
+//! Progress of a transcription run as typed events (the earlier shell
+//! script printed them as `PROGRESS:` lines), and the progress-bar arithmetic the GUI used.
 
 /// One step of a run.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -588,8 +588,8 @@ impl App {
 
     // -- actions ----------------------------------------------------------------------------
 
-    /// PORTING.md section 7.2's enablement rules, except that Start is also allowed for
-    /// audio already in the session folder (a retry needs no new files).
+    /// When each action is available. Start is also allowed for audio already in the
+    /// session folder (a retry needs no new files).
     pub fn enabled(&self, action: Action) -> bool {
         let idle = !self.running();
         match action {

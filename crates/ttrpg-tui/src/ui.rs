@@ -1,7 +1,7 @@
 //! Drawing. Colours are the terminal's own ANSI palette (named colours and
 //! modifiers only, never RGB), so the TUI follows whatever theme the terminal has.
 //!
-//! Layout, as PORTING.md section 7.5 sketches it:
+//! Layout:
 //!
 //! ```text
 //! title / campaign line                                   (banner when tools are missing)
@@ -555,7 +555,7 @@ fn transcript_view(app: &mut App, inner: Rect) -> (Vec<Line<'static>>, Option<St
 }
 
 /// The standing nudge for a campaign with no `review_only` list: the alias report seeds it
-/// before the first index (PORTING.md section 7.1).
+/// before the first index.
 fn review_banner(app: &App, width: usize) -> Line<'static> {
     let Some(camp) = app.campaign() else {
         return Line::default();

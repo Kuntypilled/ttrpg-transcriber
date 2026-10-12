@@ -310,7 +310,7 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
     frame.render_widget(Paragraph::new(Line::from(toggle_spans)), toggles);
 }
 
-/// Indexing a campaign with no `review_only` list: PORTING.md section 7.3's three choices.
+/// Indexing a campaign with no `review_only` list: report first, index anyway, or cancel.
 fn no_review_only(frame: &mut Frame, app: &mut App) {
     let lines = vec![
         Line::default(),

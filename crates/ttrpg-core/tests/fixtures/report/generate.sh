@@ -15,8 +15,8 @@ env -i PATH="$PATH" HOME="$tmp/home" GM_VAULT="$tmp/vault" GM_TRANSCRIBER_CONFIG
     GM_AUDIO_ROOT="$tmp/audio" GM_CHROMA_ROOT="$tmp/chroma" GM_WORK_ROOT="$tmp/work" \
     python3 -I -B - "$repo/crates/ttrpg-core/tests/oracle" "$here" "$tmp" <<'PY'
 import json, sys
-legacy, here, tmp = sys.argv[1:4]
-sys.path.insert(0, legacy)
+oracle, here, tmp = sys.argv[1:4]
+sys.path.insert(0, oracle)
 import transcript_to_chunks as t
 for case in json.load(open(f"{here}/cases.json")):
     t.WORDLISTS = (f"{here}/words.txt",) if case["dictionary"] else ("/nonexistent/words",)

@@ -1,5 +1,5 @@
 //! Startup and runtime log, so a panicked TUI leaves a trace after the alternate
-//! screen closes (PORTING.md section 8). Same directory and override variable as
+//! screen closes. Same directory and override variable as
 //! the GUI's log; a different default file name so the two never interleave.
 
 use std::fs::OpenOptions;

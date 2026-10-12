@@ -1,5 +1,4 @@
-//! `transcription_state.csv`, the per-file record a run appends to (PORTING.md section
-//! 4.2). Every field is in double quotes and quotes inside them are not escaped (the
+//! `transcription_state.csv`, the per-file record a run appends to. Every field is in double quotes and quotes inside them are not escaped (the
 //! original wrote them raw; the Rust run turns them into single quotes), so this reads
 //! it with that assumption rather than as general CSV.
 

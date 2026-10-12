@@ -2,8 +2,7 @@
 //!
 //! Each test builds a throwaway vault from invented fixtures, then runs the same
 //! command through `tests/oracle/campaign.py` and through ttrpg-core with an identical
-//! environment, and requires identical output and exit code (PORTING.md section 9,
-//! items 5 and 6). They need `python3`; without it each test prints SKIPPED.
+//! environment, and requires identical output and exit code. They need `python3`; without it each test prints SKIPPED.
 //!
 //! Only two normalisations are applied to the Python output, both for text that
 //! names the program or an example id: `python3 campaign.py` becomes `ttrpg-tui`

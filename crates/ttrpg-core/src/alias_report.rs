@@ -1,4 +1,4 @@
-//! The alias-candidate report (PORTING.md section 5.6): a read-only scan of a
+//! The alias-candidate report: a read-only scan of a
 //! transcript for likely manglings of canon names and for frequent capitalised words
 //! that are neither canon nor English. Ported from `transcript_to_chunks.py --report`;
 //! the output is the same text byte for byte (`tests/alias_report.rs`), which needs

@@ -1,7 +1,7 @@
 //! Text output of the `list`, `paths`, `doctor` and `whisper-device` commands.
 //!
-//! The formats match `campaign.py` so the Rust and Python outputs can be diffed
-//! (PORTING.md section 9, items 5 and 6). Output is returned as a string; the
+//! The formats match `campaign.py` so the Rust and Python outputs can be diffed.
+//! Output is returned as a string; the
 //! binary prints it.
 
 use std::fmt::Write as _;

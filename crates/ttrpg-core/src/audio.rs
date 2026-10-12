@@ -1,7 +1,6 @@
-//! Audio files and who is speaking on them (PORTING.md sections 4.5 and 7.3).
+//! Audio files and who is speaking on them.
 //!
-//! PORTING.md asks for one speaker-resolution function used by both the pipeline
-//! and the UI. The transcription run ([`crate::transcribe`]) and the screen both call
+//! One speaker-resolution function serves both the pipeline and the UI. The transcription run ([`crate::transcribe`]) and the screen both call
 //! it, and `tests/job.rs` checks the labels it gives against the original script's
 //! output.
 
@@ -93,7 +92,7 @@ pub fn discord_stem_of_base(base: &str) -> String {
 }
 
 /// The character exactly as the alias file spells it. The transcript label is this
-/// string and not the underscore-normalised one the chunker uses (PORTING.md 4.5).
+/// string and not the underscore-normalised one the chunker uses.
 fn raw_character(campaign: &Campaign, stem: &str) -> Option<String> {
     let entry = campaign.data().get("discord_names")?.get(stem)?;
     match entry.get("character")? {

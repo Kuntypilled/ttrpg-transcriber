@@ -1,4 +1,4 @@
-//! Config and root resolution (PORTING.md section 3.1).
+//! Config and root resolution.
 //!
 //! Every root resolves in the same order: environment variable, then the config
 //! file, then a built-in default where a correct one exists. Each resolved value

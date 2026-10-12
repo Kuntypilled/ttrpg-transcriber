@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Session Transcriber
+Comment=Transcribe a Craig multitrack recording of a tabletop session
+# .desktop files do not expand ~ or $HOME, so Exec needs an absolute path unless
+# ttrpg-tui is on the PATH of your desktop session. Edit it, then install with:
+#   install -Dm644 ttrpg-tui.desktop.example ~/.local/share/applications/ttrpg-tui.desktop
+#   update-desktop-database ~/.local/share/applications
+Exec=/home/YOUR_USER/.cargo/bin/ttrpg-tui
+# The program runs in a terminal. If your launcher ignores this, put the terminal in
+# the command instead, e.g.  Exec=alacritty -e /home/YOUR_USER/.cargo/bin/ttrpg-tui
+Terminal=true
+Icon=audio-input-microphone
+Categories=AudioVideo;Audio;Utility;
+StartupNotify=true

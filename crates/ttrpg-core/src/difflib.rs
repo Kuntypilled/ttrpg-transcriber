@@ -1,6 +1,6 @@
 //! `difflib.SequenceMatcher` from Python's standard library, as far as the alias
-//! report uses it: `ratio`, `quick_ratio` and `real_quick_ratio` on two strings
-//! (PORTING.md section 5.6). It is the Ratcliff/Obershelp measure, not Levenshtein;
+//! report uses it: `ratio`, `quick_ratio` and `real_quick_ratio` on two strings.
+//! It is the Ratcliff/Obershelp measure, not Levenshtein;
 //! the report's 0.70 threshold was tuned against it, so it is ported exactly,
 //! including how ties between equally long matches are broken and the "popular
 //! element" rule for a second string of 200 characters or more.

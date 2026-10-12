@@ -7,8 +7,8 @@ Prints {"added": [...]} or {"error": "..."} as JSON.
 import json
 import sys
 
-legacy_dir, path, key, entries = sys.argv[1], sys.argv[2], sys.argv[3], json.loads(sys.argv[4])
-sys.path.insert(0, legacy_dir)
+oracle_dir, path, key, entries = sys.argv[1], sys.argv[2], sys.argv[3], json.loads(sys.argv[4])
+sys.path.insert(0, oracle_dir)
 import campaign as m  # noqa: E402
 
 try:

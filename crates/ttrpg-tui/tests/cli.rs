@@ -159,7 +159,7 @@ fn plain_commands_match_the_python_original() {
     };
     let v = Vault::new();
     let env = v.env();
-    let legacy = repo_root().join("crates/ttrpg-core/tests/oracle/campaign.py");
+    let oracle = repo_root().join("crates/ttrpg-core/tests/oracle/campaign.py");
     for args in [
         &["list"][..],
         &["paths", "--campaign", "emberfall/main"],
@@ -169,7 +169,7 @@ fn plain_commands_match_the_python_original() {
     ] {
         let want = Command::new(&py)
             .args(["-I", "-B"])
-            .arg(&legacy)
+            .arg(&oracle)
             .args(args)
             .env_clear()
             .envs(&env)

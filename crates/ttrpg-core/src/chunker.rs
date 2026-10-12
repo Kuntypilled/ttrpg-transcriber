@@ -1,4 +1,4 @@
-//! The transcript chunker (PORTING.md sections 5.1 to 5.5): `transcript.md` to the
+//! The transcript chunker: `transcript.md` to the
 //! JSONL the Chroma helper ingests, byte for byte what `transcript_to_chunks.py`
 //! wrote, because changing the chunk shape invalidates an existing index.
 //!
@@ -67,7 +67,7 @@ pub fn entries(raw: &str) -> Vec<(String, String, String, String, String)> {
 
 /// Non-blank lines that belong to no entry: text before the first speaker line, or a line
 /// that starts like a header but is not one (a mistyped time, a missing colon). The original
-/// dropped these without a word (PORTING.md section 10, item 6); the Index job reports the count.
+/// dropped these without a word; the Index job reports the count.
 pub fn uncovered_lines(raw: &str) -> usize {
     let mut covered_to = 0;
     let mut pos = 0;

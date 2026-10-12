@@ -3,6 +3,8 @@ name = "ttrpg-tui"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+repository.workspace = true
+description = "Terminal program that transcribes tabletop RPG session recordings and indexes them per campaign"
 
 [dependencies]
 anyhow = "1.0.104"

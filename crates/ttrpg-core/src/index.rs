@@ -1,10 +1,10 @@
-//! Index to Memory and the alias report (PORTING.md sections 5, 6 and 7.3).
+//! Index to Memory and the alias report.
 //!
 //! The chunker and the alias report run in this program ([`crate::chunker`],
 //! [`crate::alias_report`]). Storing the chunks is the one Python step: the Chroma
 //! helper (`python/chroma_memory.py`) embeds and stores them. ChromaDB and
 //! sentence-transformers have no practical Rust equivalent that reads the existing
-//! store (PORTING.md section 6), so that half stays Python for good; which Python is
+//! store, so that half stays Python for good; which Python is
 //! the `python` setting. The helper is built into the program and run with
 //! `python -c`, so there is no file to find.
 //!

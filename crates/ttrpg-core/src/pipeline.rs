@@ -1,9 +1,9 @@
-//! The post-processing stages of `transcribe.sh` (PORTING.md sections 4.6 and 4.7) in
+//! The post-processing stages of `transcribe.sh` in
 //! Rust: whisper JSON to filtered, collapsed rows per track, then the merged,
 //! consolidated and Markdown transcripts. Pure functions on text, so they can be
 //! checked byte for byte against what the script wrote (`tests/pipeline.rs`).
 //!
-//! Where this differs from the script on purpose it is listed in `ERRATA.md`.
+//! Where this differs from the script on purpose it is listed in `docs/differences.md`.
 
 use std::cmp::Ordering;
 
@@ -113,7 +113,7 @@ fn should_filter(text: &str, words: &[String]) -> bool {
     })
 }
 
-/// The script's `is_stock_segment` (see `ERRATA.md`).
+/// The script's `is_stock_segment` (see `docs/differences.md`).
 fn is_stock(row: &Row, rule: &StockRule) -> bool {
     if !rule.enabled() || row.end - row.start < i64::from(rule.min_seconds) * 1000 {
         return false;
@@ -411,7 +411,7 @@ mod tests {
             "Processed: a.processed.tsv — filtered: 2, collapsed: 3, stock phrases dropped: 1"
         );
         // A short one right after a long run is collapsed into it and goes with it: the
-        // limitation noted in ERRATA.md.
+        // limitation noted in docs/differences.md.
         let glued = process_segments(
             "GM",
             &[seg(0, 30_000, "Thank you."), seg(31_000, 32_000, "Thank you.")],

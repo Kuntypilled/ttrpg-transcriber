@@ -1,5 +1,5 @@
-//! Two more settings the original only had as command-line flags the GUI never passed
-//! (PORTING.md sections 4.1, 4.4 and 7.4): the words dropped as filler, and how much
+//! Two more settings the original only had as command-line flags the GUI never passed:
+//! the words dropped as filler, and how much
 //! context whisper keeps between segments.
 
 use serde_json::Value;

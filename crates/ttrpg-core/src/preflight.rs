@@ -1,4 +1,4 @@
-//! Are the tools the pipeline shells out to present? (PORTING.md section 4.3.)
+//! Are the tools the pipeline shells out to present?
 //!
 //! Transcribing needs ffmpeg, whisper-cli and a whisper model, and nothing else.
 //! Python and the Chroma helper are for Index to Memory only, so they are optional

@@ -1,7 +1,7 @@
 //! Core of the session transcriber: configuration, campaign registry, path
 //! rules and the transcription job. No UI. Behaviour is ported from
-//! `tests/oracle/campaign.py` and checked against it by the parity tests (see
-//! PORTING.md sections 3 and 9); the job runs in Rust ([`transcribe`]).
+//! `tests/oracle/campaign.py` and checked against it by the parity tests; the
+//! job runs in Rust ([`transcribe`]).
 
 pub mod alias_report;
 pub mod aliases;

@@ -3,7 +3,7 @@
 //! Whisper invents "Thank you." on a silent stretch of a track, one per 30 s
 //! window, and the collapse step joins the repeats into one long line. A line that is
 //! exactly one of these phrases is dropped when it lasts `min_seconds` or more (see
-//! `ERRATA.md` for the reasoning). The rule itself is applied in [`crate::pipeline`].
+//! `docs/differences.md` for the reasoning). The rule itself is applied in [`crate::pipeline`].
 //!
 //! Settings, in the usual order (environment, then the config file):
 //!

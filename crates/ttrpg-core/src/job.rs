@@ -1,4 +1,4 @@
-//! The transcription job (PORTING.md section 11): move the chosen audio into the
+//! The transcription job: move the chosen audio into the
 //! session folder, then run the transcription ([`crate::transcribe`]) and turn its
 //! progress into typed events.
 //!

@@ -1,5 +1,5 @@
 {
-    "_comment": "Copy to $XDG_CONFIG_HOME/ttrpg-transcriber/config.json (usually ~/.config/ttrpg-transcriber/config.json) and edit. Set either 'vaults_root' (a directory holding one vault per world; campaigns become <world>/<campaign>) or 'vault' (a single vault). Neither has a default because there is no correct guess; if both are set, vaults_root wins. Every other key is optional. 'whisper_device' is whisper-cli's -dev index and only matters with more than one GPU: use the number ggml prints at startup. Environment variables win over this file: GM_WHISPER_DEVICE, GM_VAULTS_ROOT, GM_VAULT, GM_AUDIO_ROOT, GM_CHROMA_ROOT, GM_WORK_ROOT, GM_CAMPAIGNS_SUBDIR, GM_TRANSCRIPTS_SUBDIR. Run 'python3 campaign.py doctor' to see what resolved and where each value came from.",
+    "_comment": "Copy to $XDG_CONFIG_HOME/ttrpg-transcriber/config.json (usually ~/.config/ttrpg-transcriber/config.json) and edit. Set either 'vaults_root' (a directory holding one vault per world; campaigns become <world>/<campaign>) or 'vault' (a single vault). Neither has a default because there is no correct guess; if both are set, vaults_root wins. Every other key is optional and shown here with its default or an example. 'whisper_device' is whisper-cli's -dev index and only matters with more than one GPU: use the number ggml prints at startup. 'python' is the interpreter that has chromadb and sentence-transformers installed; only Index, info and query use it. Environment variables win over this file: GM_VAULTS_ROOT, GM_VAULT, GM_AUDIO_ROOT, GM_CHROMA_ROOT, GM_WORK_ROOT, GM_CAMPAIGNS_SUBDIR, GM_TRANSCRIPTS_SUBDIR, GM_WHISPER_BIN, GM_WHISPER_MODEL, GM_WHISPER_DEVICE, GM_WHISPER_MC, GM_PYTHON, GM_STOCK_PHRASES, GM_STOCK_MIN_SECONDS, GM_IGNORE_WORDS. Run 'ttrpg-tui doctor' to see what resolved and where each value came from.",
 
     "vaults_root": "~/vaults",
     "vault": "~/my_vault",
@@ -9,5 +9,14 @@
     "work_root":   "~/.cache/ttrpg_transcribe",
 
     "campaigns_subdir":   "0.2_campaigns",
-    "transcripts_subdir": "08_transcripts"
+    "transcripts_subdir": "08_transcripts",
+
+    "whisper_bin":   "whisper-cli",
+    "whisper_model": "~/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin",
+    "whisper_max_context": 0,
+    "python": "python3",
+
+    "stock_phrases": ["thank you", "we'll be right back"],
+    "stock_min_seconds": 20,
+    "ignore_words": ["you", "silence", "um", "uh", "ah", "like", "right", "well"]
 }

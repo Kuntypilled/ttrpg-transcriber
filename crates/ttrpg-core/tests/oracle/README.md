@@ -26,7 +26,7 @@ jq, ffmpeg and python3).
 have been collapsed. Whisper invents these on silent stretches, one per 30 s window.
 A run that drops nothing logs and outputs what the original did, plus one extra
 `Stock    :` line in the banner that says which phrases are active. The reasoning and
-the evidence are in `ERRATA.md`; the Rust rule is tested in
+the evidence are in `docs/differences.md`; the Rust rule is tested in
 `crates/ttrpg-core/tests/stock_phrases.rs`. The original repository is unchanged.
 
 `transcribe.sh` and `transcript_to_chunks.py` import or call `campaign.py` from their
