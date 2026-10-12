@@ -87,6 +87,33 @@ priority.
 | The TUI log is `ttrpg_tui.log` in the same directory, with UTC timestamps | Avoids interleaving with the GUI's log; no timezone database |
 | An unconfigured TUI shows the full setup instructions in the details pane | The GUI showed a one-line hint |
 
+### Milestone 2: the transcription run
+
+| Difference | Why |
+|---|---|
+| A confirmation step names the folder, says the files are **moved**, and warns when a chosen file will replace one with the same name | The GUI moved files with no prompt and replaced same-name files silently |
+| Start also works with nothing chosen when audio is already in the session folder | A retry needs no new files; the GUI had no explicit way to do it |
+| The tool check is done in Rust (`ttrpg-tui check`, and at Start before anything is moved) | `transcribe.sh --check` creates folders and CSV files; the GUI also moved the audio before the script discovered a missing tool |
+| One list of audio extensions (flac mp3 wav m4a ogg aac mp4 wma, any case) for the picker and the pipeline | The original had two lists that disagreed |
+| The result is built from the state rows the run appended, plus the script's exit code and `PROGRESS:postdone` | The GUI printed "Complete!" whatever happened. Only rows appended during this run count, so a track is never credited with an earlier run's success |
+| Cancel sends TERM, then KILL after 3 s, to the script's whole process group. The track in flight gets no state row, so the next run retries it | PORTING.md section 8 suggested recording "Error: cancelled"; the script owns that file, and a missing row already means "not done" |
+| The session number is offered: the one after the latest session with a transcript, or the latest itself if it has none | The GUI left the field empty |
+| Output from the script is stripped of control characters before it is shown | whisper-cli and ffmpeg write escape codes that would otherwise recolour or move the screen |
+| `q` while a job runs warns first; a second `q` cancels the job and then quits | Quitting must not leave whisper-cli running |
+| Tool locations are settings (`whisper_bin`, `whisper_model`, `legacy_dir`) | `transcribe.sh` took them as flags the GUI never passed |
+
+Known limits of milestone 2:
+
+- Progress is per track. A single track shows a spinner and elapsed time. The real
+  log shows a 73-minute track takes under 40 s, so this was left for later.
+- Unknown speakers can be seen but not added from inside the app (milestone 3). The
+  script labels such a track by its file name.
+- `--force`, `--post-process-only`, `--cleanup`, `--ignore-words` and `-mc` are not
+  exposed yet.
+- `transcribe.sh` still transcribes every audio file in the session folder, not only
+  the ones chosen in this run, and the list in the app shows both.
+- The picker lists only folders and audio files. A Craig `.zip` has to be unpacked first.
+
 Kept on purpose, because the original does it: the config file is read lazily and
 only when a value needs it, so a broken `config.json` is not an error until then;
 `whisper_device` reads the config even when the environment variable would win;

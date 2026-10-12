@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Stand-in for whisper-cli, used only by scripts/demo.sh.
+
+Understands the flags transcribe.sh passes (-of PREFIX, -oj, -m, -l, --prompt, -dev,
+-mc and the input wav), waits a moment so the progress bar has something to show,
+then writes canned dialogue for the track as whisper.cpp -oj JSON. Every name and
+line is invented.
+
+    DEMO_DELAY   seconds of pretend work per track (default 2.5)
+    a file name containing "fail" makes it exit with an error, to show a failed track
+"""
+import json
+import os
+import re
+import sys
+import time
+
+args = sys.argv[1:]
+out_prefix = wav = None
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "-of":
+        out_prefix = args[i + 1]
+        i += 2
+    elif a in ("-m", "-l", "--prompt", "-dev", "-mc"):
+        i += 2
+    elif a == "-oj":
+        i += 1
+    else:
+        wav = a
+        i += 1
+if not out_prefix or not wav:
+    sys.exit("fake-whisper-cli: need -of PREFIX and an input file")
+
+name = os.path.basename(wav)
+m = re.match(r"(\d+)-", name)
+track = int(m.group(1)) if m else 1
+
+time.sleep(float(os.environ.get("DEMO_DELAY", "2.5")) + 0.4 * (track % 3))
+if "fail" in name:
+    sys.stderr.write("fake-whisper-cli: pretending the model fell over\n")
+    sys.exit(3)
+
+# track number -> (start in ms, text). Whisper puts a leading space on every segment.
+SCENE = {
+    1: [  # the GM
+        (4000, "The Cinder Road runs out at the gates of Marrow Hall."),
+        (11000, "Rain has been falling for three days, and the lanterns along the wall are dark."),
+        (30500, "A woman in House Marlow colours waits under the arch. She does not look up."),
+        (52000, "She says, you are late, and she is not smiling."),
+        (80000, "Roll to see what you notice."),
+        (95000, "The ledger is missing a page. Someone tore it out recently."),
+    ],
+    2: [
+        (7000, "We take the road slowly. Bram, keep your hand off that sword."),
+        (34000, "Vashti steps forward and bows, just enough to be polite."),
+        (36000, "you"),
+        (36600, "Um."),
+        (58000, "We are exactly on time. The rain made fools of us all."),
+        (83000, "I rolled a nine. Does that count?"),
+    ],
+    3: [
+        (8500, "I am not touching the sword. I am resting my hand near the sword."),
+        (9500, "Near it."),
+        (10100, "near it."),
+        (60500, "Ask her whose colours those are. Nobody wears Marlow in Emberfall anymore."),
+        (88000, "Seven. I found the torn edge of the page."),
+    ],
+    4: [
+        (13000, "Kestrel, is it me, or are the lanterns watching us?"),
+        (39000, "I will wait by the door. Somebody should."),
+        (72000, "Nell checks the shadows by the archway."),
+        (90500, "Twelve! Is that good? It sounds good."),
+    ],
+    5: [
+        (15000, "It is you. But also yes, a little."),
+        (41000, "Kestrel, who has seen this before, draws the shutters closed."),
+        (97500, "That page is from Thornwake, I would bet on it."),
+    ],
+    6: [  # a guest nobody has added to discord_names yet
+        (45000, "Sorry, joining late, can you hear me? I am only here for the night."),
+        (100000, "Is this the part with the ledger?"),
+    ],
+}
+
+segments = []
+for start, text in SCENE.get(track, [(1000, "Testing, testing.")]):
+    segments.append({"offsets": {"from": start, "to": start + 2500}, "text": " " + text})
+
+with open(out_prefix + ".json", "w", encoding="utf-8") as f:
+    json.dump({"transcription": segments}, f, ensure_ascii=False)

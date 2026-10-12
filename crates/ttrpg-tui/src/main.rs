@@ -1,11 +1,8 @@
 //! `ttrpg-tui`: terminal front end for the session transcriber.
 //!
 //! With no subcommand it opens the TUI. `doctor`, `list`, `paths` and
-//! `whisper-device` are the plain-text commands of the original `campaign.py`.
-
-mod app;
-mod log;
-mod ui;
+//! `whisper-device` are the plain-text commands of the original `campaign.py`;
+//! `check` reports whether the tools the pipeline needs are installed.
 
 use std::io::{IsTerminal, stdout};
 use std::process::ExitCode;
@@ -16,9 +13,10 @@ use clap::{Parser, Subcommand};
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use ratatui::crossterm::execute;
 use ttrpg_core::Settings;
+use ttrpg_core::preflight::{preflight, render};
 use ttrpg_core::report::{doctor, list_output, paths_output, whisper_device_output};
-
-use crate::app::App;
+use ttrpg_tui::app::App;
+use ttrpg_tui::{log, ui};
 
 const CLI_NAME: &str = "ttrpg-tui";
 
@@ -45,6 +43,8 @@ enum Command {
         #[arg(long, allow_hyphen_values = true)]
         session: Option<i64>,
     },
+    /// Are whisper-cli, ffmpeg, jq, the model and the scripts present? Creates nothing.
+    Check,
 }
 
 fn main() -> ExitCode {
@@ -64,7 +64,7 @@ fn main() -> ExitCode {
 
 /// The plain-text commands. Exit codes follow `campaign.py`: 2 for a problem the
 /// user can fix (printed as `ERROR: ...` on stderr), and for `doctor` 1 when no
-/// campaign was found.
+/// campaign was found. `check` exits 1 when a required tool is missing.
 fn run_command(settings: &Settings, cmd: Command) -> u8 {
     let result = match cmd {
         Command::List => {
@@ -84,6 +84,14 @@ fn run_command(settings: &Settings, cmd: Command) -> u8 {
             print!("{}", report.out);
             report.result
         }
+        Command::Check => {
+            let report = preflight(settings);
+            print!("Checking tools...\n{}", render(&report));
+            if !report.ok() {
+                println!("\nMissing: {}", report.missing_names());
+            }
+            Ok(i32::from(!report.ok()))
+        }
     };
     match result {
         Ok(code) => code as u8,
@@ -96,7 +104,7 @@ fn run_command(settings: &Settings, cmd: Command) -> u8 {
 
 fn run_tui(settings: Settings) -> Result<()> {
     if !stdout().is_terminal() || !std::io::stdin().is_terminal() {
-        bail!("the TUI needs an interactive terminal. For plain output use: {CLI_NAME} list | doctor | paths");
+        bail!("the TUI needs an interactive terminal. For plain output use: {CLI_NAME} list | doctor | check | paths");
     }
     let log_path = log::log_path(&settings);
     let mut app = App::new(settings);
@@ -126,21 +134,31 @@ fn run_tui(settings: Settings) -> Result<()> {
     result
 }
 
-/// Redraws only when something changed. The poll timeout is the tick that later
-/// milestones will use to drain background-job events.
+/// Redraws only when something changed. While a job runs it wakes ten times a second to
+/// drain the job's events and advance the spinner; otherwise four times a second.
 fn event_loop(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> Result<()> {
     while !app.should_quit {
+        app.poll_job();
         if app.dirty {
             terminal.draw(|frame| ui::draw(frame, app))?;
             app.dirty = false;
         }
-        if event::poll(Duration::from_millis(250))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => app.on_key(key),
-                Event::Mouse(mouse) => app.on_mouse(mouse),
-                Event::Resize(..) => app.dirty = true,
-                _ => {}
+        let wait = Duration::from_millis(if app.running() { 100 } else { 250 });
+        if event::poll(wait)? {
+            // Handle a whole burst (a fast wheel, a paste) before the next draw.
+            loop {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => app.on_key(key),
+                    Event::Mouse(mouse) => app.on_mouse(mouse),
+                    Event::Resize(..) => app.dirty = true,
+                    _ => {}
+                }
+                if app.should_quit || !event::poll(Duration::ZERO)? {
+                    break;
+                }
             }
+        } else {
+            app.on_tick();
         }
     }
     Ok(())

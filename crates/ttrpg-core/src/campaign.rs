@@ -274,6 +274,43 @@ impl Campaign {
         })
     }
 
+    // -- sessions --
+
+    /// Session numbers that already have a transcripts folder (`S<digits>`) or an
+    /// audio folder (`Session <digits>`), ascending and without duplicates.
+    pub fn session_numbers(&self, settings: &Settings) -> Result<Vec<i64>, CampaignError> {
+        let mut found = std::collections::BTreeSet::new();
+        let mut scan = |dir: &str, prefix: &str| {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().filter_map(Result::ok) {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if let Some(digits) = name.strip_prefix(prefix)
+                    && !digits.is_empty()
+                    && digits.bytes().all(|b| b.is_ascii_digit())
+                    && entry.path().is_dir()
+                {
+                    found.extend(digits.parse::<i64>().ok());
+                }
+            }
+        };
+        scan(&self.transcripts_dir(settings)?, "S");
+        scan(&self.audio_dir_base(settings)?, "Session ");
+        Ok(found.into_iter().collect())
+    }
+
+    /// The session most likely to be transcribed next: the one after the latest
+    /// session that has a transcript, or the latest session itself when its
+    /// transcript never got written (so reopening the program offers the retry).
+    /// A campaign with no sessions yet starts at 1.
+    pub fn suggest_session(&self, settings: &Settings) -> i64 {
+        let Some(&last) = self.session_numbers(settings).unwrap_or_default().last() else {
+            return 1;
+        };
+        let done = self
+            .transcript_path(settings, last)
+            .is_ok_and(|p| Path::new(&p).is_file());
+        if done { last + 1 } else { last }
+    }
+
     // -- campaign data --
 
     pub fn seed_prompt(&self) -> String {

@@ -180,3 +180,70 @@ fn plain_commands_match_the_python_original() {
         assert_eq!(got.status.code(), want.status.code(), "exit code for {args:?}");
     }
 }
+
+fn files_under(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for e in fs::read_dir(&dir).unwrap().filter_map(Result::ok) {
+            out.push(e.path());
+            if e.path().is_dir() {
+                stack.push(e.path());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn check_names_what_is_missing_exits_1_and_creates_nothing() {
+    let v = Vault::new();
+    let mut env = v.env();
+    env.insert(
+        "PATH".into(),
+        v.tmp.path().join("empty-bin").to_string_lossy().into_owned(),
+    );
+    let before = files_under(v.tmp.path());
+    let out = run(&env, &["check"]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = text(&out.stdout);
+    for want in [
+        "[MISSING] bash",
+        "[MISSING] ffmpeg",
+        "[MISSING] jq",
+        "[MISSING] whisper model",
+        "Missing: bash, python3, ffmpeg, jq",
+    ] {
+        assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
+    }
+    assert!(stdout.contains("[OK] legacy scripts"), "{stdout}");
+    assert_eq!(
+        files_under(v.tmp.path()),
+        before,
+        "unlike transcribe.sh --check, this creates no files"
+    );
+}
+
+#[test]
+fn check_passes_when_the_tools_are_there() {
+    use std::os::unix::fs::PermissionsExt;
+    let v = Vault::new();
+    let bin = v.tmp.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    for t in ["bash", "python3", "ffmpeg", "jq", "whisper-cli"] {
+        fs::write(bin.join(t), "#!/bin/sh\n").unwrap();
+        fs::set_permissions(bin.join(t), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    fs::write(v.tmp.path().join("model.bin"), "x").unwrap();
+    let mut env = v.env();
+    env.insert("PATH".into(), bin.to_string_lossy().into_owned());
+    env.insert(
+        "GM_WHISPER_MODEL".into(),
+        v.tmp.path().join("model.bin").to_string_lossy().into_owned(),
+    );
+    let out = run(&env, &["check"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stdout));
+    assert!(text(&out.stdout).contains("[OK] whisper-cli"));
+    assert!(!text(&out.stdout).contains("Missing:"));
+}

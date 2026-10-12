@@ -262,6 +262,63 @@ impl Settings {
         Ok(self.resolve(key, &[env], Some(default))?.expect("default supplied"))
     }
 
+    // -- pipeline tools (not in the original campaign.py; transcribe.sh took these as flags) --
+
+    /// Every environment variable, as handed to child processes.
+    pub fn env_vars(&self) -> &HashMap<String, String> {
+        &self.env
+    }
+
+    /// The command name or path of whisper-cli: `$GM_WHISPER_BIN`, else the
+    /// `whisper_bin` config key. A bare name is looked up on PATH, so it is not
+    /// made absolute.
+    pub fn whisper_bin(&self) -> Result<Option<Sourced>, CampaignError> {
+        let pick = |raw: &str, source: String| {
+            let expanded = pyish::expanduser(raw, self.env_raw("HOME"));
+            let value = if expanded.contains('/') {
+                self.expand_abs(&expanded)
+            } else {
+                expanded
+            };
+            Sourced { value, source }
+        };
+        if let Some(v) = self.env("GM_WHISPER_BIN") {
+            return Ok(Some(pick(v, "$GM_WHISPER_BIN".into())));
+        }
+        match self.config()?.get("whisper_bin").filter(|v| pyish::truthy(v)) {
+            Some(v) => Ok(Some(pick(&self.config_string("whisper_bin", v)?, self.config_path()))),
+            None => Ok(None),
+        }
+    }
+
+    /// `$GM_WHISPER_MODEL` or the `whisper_model` config key: the ggml model file.
+    pub fn whisper_model(&self) -> Result<Option<Sourced>, CampaignError> {
+        self.resolve("whisper_model", &["GM_WHISPER_MODEL"], None)
+    }
+
+    /// `$GM_LEGACY_DIR` or the `legacy_dir` config key: where `transcribe.sh` lives.
+    pub fn legacy_dir(&self) -> Result<Option<Sourced>, CampaignError> {
+        self.resolve("legacy_dir", &["GM_LEGACY_DIR"], None)
+    }
+
+    /// The command to run for whisper, with the script's own default.
+    pub fn effective_whisper_bin(&self) -> Result<String, CampaignError> {
+        Ok(self
+            .whisper_bin()?
+            .map_or_else(|| "whisper-cli".to_string(), |s| s.value))
+    }
+
+    /// The model file, with `transcribe.sh`'s default (which is `$HOME`-based, not XDG).
+    pub fn effective_model(&self) -> Result<String, CampaignError> {
+        Ok(self.whisper_model()?.map_or_else(
+            || {
+                let home = self.env_raw("HOME").unwrap_or("");
+                pyish::join(home, ".local/share/whisper.cpp/models/ggml-large-v3-turbo.bin")
+            },
+            |s| s.value,
+        ))
+    }
+
     /// whisper-cli's `-dev N`: the ggml device index. `Ok(None)` lets whisper-cli
     /// choose. The environment wins over the config file, and a bad value in
     /// either is an error naming where it came from.
