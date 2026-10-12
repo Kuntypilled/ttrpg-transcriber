@@ -6,6 +6,7 @@
 #   - a Downloads folder holding six tiny "Craig" tracks, one from a speaker the
 #     campaign does not know, so you can see the warning
 #   - a stand-in whisper-cli that waits a few seconds per track and writes canned dialogue
+#   - a stand-in for the Python that has ChromaDB, so Index and the alias report can be tried
 #
 # Nothing outside the demo folder is touched and your real config is ignored.
 #
@@ -46,7 +47,8 @@ else
     touch "$demo/.ttrpg-tui-demo"
 
     cp "$here/scripts/demo/fake-whisper-cli" "$demo/bin/whisper-cli"
-    chmod +x "$demo/bin/whisper-cli"
+    cp "$here/scripts/demo/fake-python" "$demo/bin/python"
+    chmod +x "$demo/bin/whisper-cli" "$demo/bin/python"
     echo "not a real model" >"$demo/model.bin"
 
     camps="$demo/vaults/emberfall/0.2_campaigns"
@@ -106,6 +108,7 @@ export GM_CHROMA_ROOT="$demo/chroma"
 export GM_WORK_ROOT="$demo/work"
 export GM_WHISPER_BIN="$demo/bin/whisper-cli"
 export GM_WHISPER_MODEL="$demo/model.bin"
+export GM_PYTHON="$demo/bin/python"
 export GM_LEGACY_DIR="$here/legacy"
 export DEMO_DELAY="${DEMO_DELAY:-2.5}"
 unset GM_VAULT VAULT GM_WHISPER_DEVICE
@@ -115,6 +118,9 @@ cat <<EOF
 Demo world: $demo
 Try: f (choose files, they are in Downloads), a (all), c (done), s (start), Enter.
      Then look at the Log and Transcript tabs. ? lists every key.
+     r resolves the unknown guest. With session 1 selected (n, 1, Enter), i indexes its
+     transcript and a writes the alias report (the vector store is pretended; the rest is real).
+     Lantern Row has no review_only list, so i asks about the report first there.
 
 EOF
 exec "$bin"

@@ -8,7 +8,7 @@ What was found to differ between that document and the code is in
 
 ## Status
 
-Milestones 1 to 3 of 7 (PORTING.md section 11).
+Milestones 1 to 4 of 7 (PORTING.md section 11).
 
 What you can do now:
 
@@ -29,14 +29,20 @@ What you can do now:
 - Read the result honestly ("4 of 5 transcribed, 1 failed", with the failing track
   named), mark each track done or failed in the list, and read the finished
   transcript in the app.
+- Press `i` to index the session's transcript into the campaign's memory (the chunker,
+  then ChromaDB, with a progress bar and the helpers' output in the log). A campaign
+  with no `review_only` list is asked about first: run the alias report, index
+  anyway, or cancel. `a` writes the alias report on its own and opens it; it never
+  edits `canon_aliases.json`. A campaign without a `review_only` list carries a
+  reminder in the session pane.
 - Retry: with nothing chosen, the audio already in the session folder is the job,
   and tracks that already succeeded are skipped.
 - The plain commands `doctor`, `list`, `paths`, `whisper-device` (same output as
   `campaign.py`) and `check` (are the tools installed? creates nothing).
 
-Not done yet: indexing into ChromaDB (milestone 4), the alias report, and replacing
-the shell and Python stages with Rust (5). Until then the app runs the scripts in
-`legacy/`.
+Not done yet: replacing the shell and Python stages with Rust (milestone 5). Until
+then the app runs the scripts in `legacy/`. ChromaDB itself stays Python for good:
+it needs the Python that has ChromaDB installed (the `python` setting).
 
 ## Try it without whisper or real recordings
 
@@ -47,7 +53,8 @@ scripts/demo.sh
 builds a throwaway world (an invented campaign, six tiny "Craig" tracks in a
 Downloads folder, one from a speaker the campaign does not know, and a stand-in
 `whisper-cli` that waits a few seconds per track) and opens the app on it. Nothing
-outside the demo folder is touched. Follow the hints it prints: `f`, `a`, `c`,
+outside the demo folder is touched (the vector store is pretended so ChromaDB is not
+needed). Follow the hints it prints: `f`, `a`, `c`,
 `s`, Enter; afterwards `r` resolves the unknown guest. Variations: `DEMO_FAIL=1` adds a track that fails, `DEMO_DELAY=0` makes
 runs instant, `--keep` reuses last time's world so you can see skipped tracks.
 
@@ -79,6 +86,7 @@ instructions. These settings are new:
 | whisper command | `GM_WHISPER_BIN` | `whisper_bin` | `whisper-cli` on PATH |
 | model file | `GM_WHISPER_MODEL` | `whisper_model` | `~/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin` |
 | where `transcribe.sh` lives | `GM_LEGACY_DIR` | `legacy_dir` | the `legacy/` folder next to the program, or in the checkout it was built from |
+| Python that has ChromaDB (for Index) | `GM_PYTHON` | `python` | `python3` on PATH |
 | phrases whisper makes up on silence | `GM_STOCK_PHRASES` (comma-separated, or `off`) | `stock_phrases` (a list, or `[]` for off) | `thank you`, `we'll be right back` |
 | how long such a line must last to be dropped | `GM_STOCK_MIN_SECONDS` | `stock_min_seconds` | `20` |
 
@@ -99,6 +107,8 @@ the pointer.
 | `r` | resolve unknown speakers: add them to the campaign's `discord_names` (in the form: `Tab` next field, `Ctrl-N` `Ctrl-P` pick a character, `Ctrl-S` or `Enter` on the last field saves, `Esc` cancels) |
 | `s` | start (asks first; at the question, `t` keeps or drops whisper's made-up lines for this run) |
 | `x` | cancel the running job |
+| `i` | index the transcript into the campaign's memory (asks first if there is no `review_only` list) |
+| `a` | alias report: likely garbled names, written to `alias_candidates.md` and opened |
 | `o` | open the session folder |
 | `c` | clear the chosen files |
 | `[` `]` or `1` `2` `3` | Paths / Log / Transcript tab |

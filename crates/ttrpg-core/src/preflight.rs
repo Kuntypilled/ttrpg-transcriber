@@ -187,6 +187,21 @@ pub fn preflight(settings: &Settings) -> PreflightReport {
         status,
     });
 
+    let status = match settings.effective_python() {
+        Ok(py) => match which(settings, &py) {
+            Some(path) => DepStatus::Found(path),
+            None => DepStatus::Missing(vec![format!(
+                "{py} was not found. It runs Index and the alias report; ChromaDB must be installed for it."
+            )]),
+        },
+        Err(e) => DepStatus::Missing(vec![e.to_string()]),
+    };
+    items.push(DepItem {
+        name: "python for Index".into(),
+        required: false,
+        status,
+    });
+
     let status = match which(settings, "xdg-open") {
         Some(path) => DepStatus::Found(path),
         None => DepStatus::Missing(vec!["Needed only for the Open folder button.".to_string()]),

@@ -18,8 +18,8 @@ use ratatui::widgets::ListState;
 use ttrpg_core::audio::{Speaker, list_audio_files, natural_cmp, resolve_speaker};
 use ttrpg_core::preflight::{PreflightReport, preflight};
 use ttrpg_core::{
-    Campaign, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, StockRule, Tracker, execute, legacy,
-    list_campaigns, plan_job, save_speakers,
+    Campaign, IndexKind, IndexReport, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, StockRule, Tracker,
+    execute, execute_index, legacy, list_campaigns, plan_index, plan_job, save_speakers,
 };
 
 use crate::picker::{FilePicker, Outcome};
@@ -91,6 +91,8 @@ pub enum Action {
     Resolve,
     Start,
     Cancel,
+    Index,
+    Report,
     OpenFolder,
     ClearFiles,
     Rescan,
@@ -106,6 +108,8 @@ pub enum Modal {
     Picker(Box<FilePicker>),
     /// Who is speaking on the tracks `discord_names` does not know.
     Resolve(Box<ResolveForm>),
+    /// Indexing a campaign that has no `review_only` list yet: report first, index anyway, or cancel.
+    NoReviewOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,8 +141,17 @@ pub struct Transcript {
     pub lines: Vec<String>,
 }
 
+/// What a running job is doing, for the messages around it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobKind {
+    Transcribe,
+    Index,
+    Report,
+}
+
 /// A running job, owned by the UI thread.
 pub struct JobState {
+    pub kind: JobKind,
     rx: Receiver<PipelineEvent>,
     pub cancel: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
@@ -165,6 +178,10 @@ pub struct Hit {
     pub resolve_fields: Vec<(Rect, usize, Col)>,
     pub resolve_save: Rect,
     pub resolve_cancel: Rect,
+    /// The three buttons of the "no review_only list" question.
+    pub ask_report: Rect,
+    pub ask_index: Rect,
+    pub ask_cancel: Rect,
 }
 
 pub type Opener = Box<dyn Fn(&str) -> std::io::Result<()>>;
@@ -208,6 +225,8 @@ pub struct App {
     /// How many lines the log view is scrolled back from the newest (0 follows).
     pub log_back: usize,
     pub report: Option<RunReport>,
+    /// How the last index or alias-report run ended.
+    pub index_report: Option<IndexReport>,
     pub transcript: Option<Transcript>,
     pub transcript_scroll: usize,
     pub paths_scroll: usize,
@@ -247,6 +266,7 @@ impl App {
             log: VecDeque::new(),
             log_back: 0,
             report: None,
+            index_report: None,
             transcript: None,
             transcript_scroll: 0,
             paths_scroll: 0,
@@ -581,6 +601,7 @@ impl App {
                 .is_some_and(|sp| Path::new(&sp.session_dir).is_dir()),
             Action::ClearFiles => idle && !self.chosen.is_empty(),
             Action::Resolve => idle && self.campaign().is_some() && self.unknown_tracks() > 0,
+            Action::Index | Action::Report => idle && self.has_transcript(),
             Action::Rescan => idle,
             Action::Help | Action::Quit => true,
         }
@@ -606,6 +627,8 @@ impl App {
                 self.set_status(StatusKind::Info, "Cleared the chosen files.");
             }
             Action::Resolve => self.open_resolve(),
+            Action::Index => self.begin_index(),
+            Action::Report => self.start_index_job(IndexKind::Report),
             Action::Rescan => self.rescan(),
             Action::Help => self.modal = Some(Modal::Help),
             Action::Quit => self.request_quit(),
@@ -620,6 +643,9 @@ impl App {
             }
             Action::Resolve if self.campaign().is_none() => "Pick a campaign first.",
             Action::Resolve => "Every track already has a speaker.",
+            Action::Index | Action::Report if self.running() => "A job is running.",
+            Action::Index | Action::Report if self.campaign().is_none() => "Pick a campaign first.",
+            Action::Index | Action::Report => "There is no transcript.md for this session yet.",
             Action::ChooseFiles => "Pick a campaign first.",
             Action::Start if self.running() => "A job is already running.",
             Action::Start if self.campaign().is_none() => "Pick a campaign first.",
@@ -706,7 +732,29 @@ impl App {
 
     /// Adopt a job's event channel. Also how tests feed in a scripted job.
     pub fn attach_job(&mut self, rx: Receiver<PipelineEvent>, cancel: Arc<AtomicBool>, handle: Option<JoinHandle<()>>) {
+        self.attach_kind(JobKind::Transcribe, rx, cancel, handle);
+    }
+
+    /// Adopt the event channel of an index or alias-report job.
+    pub fn attach_index_job(
+        &mut self,
+        kind: JobKind,
+        rx: Receiver<PipelineEvent>,
+        cancel: Arc<AtomicBool>,
+        handle: Option<JoinHandle<()>>,
+    ) {
+        self.attach_kind(kind, rx, cancel, handle);
+    }
+
+    fn attach_kind(
+        &mut self,
+        kind: JobKind,
+        rx: Receiver<PipelineEvent>,
+        cancel: Arc<AtomicBool>,
+        handle: Option<JoinHandle<()>>,
+    ) {
         self.job = Some(JobState {
+            kind,
             rx,
             cancel,
             handle,
@@ -714,20 +762,27 @@ impl App {
         });
         self.log.clear();
         self.log_back = 0;
-        self.report = None;
+        self.index_report = None;
+        if kind == JobKind::Transcribe {
+            self.report = None;
+        }
         self.tracker = Tracker::default();
         self.tracker.starting();
         self.tab = Tab::Log;
         self.set_status(
             StatusKind::Info,
-            "Running. x cancels; the log shows what the script says.",
+            match kind {
+                JobKind::Transcribe => "Running. x cancels; the log shows what the script says.",
+                JobKind::Index => "Indexing. x cancels; the log shows what the helpers say.",
+                JobKind::Report => "Scanning the transcript. x cancels.",
+            },
         );
     }
 
     pub fn cancel_job(&mut self) {
         if let Some(job) = &self.job {
             job.cancel.store(true, Ordering::Relaxed);
-            self.set_status(StatusKind::Warn, "Cancelling: stopping the script and its children...");
+            self.set_status(StatusKind::Warn, "Cancelling: stopping the running job...");
         }
     }
 
@@ -762,23 +817,43 @@ impl App {
     /// Drain pending job events. Call every loop iteration.
     pub fn poll_job(&mut self) {
         let mut finished: Option<RunReport> = None;
+        let mut index_finished: Option<IndexReport> = None;
         loop {
             let Some(job) = &self.job else { return };
+            let kind = job.kind;
             match job.rx.try_recv() {
                 Ok(PipelineEvent::Moving { index, total, name }) => self.tracker.moving(index, total, &name),
                 Ok(PipelineEvent::Progress(p)) => self.tracker.apply(&p),
+                Ok(PipelineEvent::Stage { label, fraction }) => self.tracker.stage(&label, fraction),
                 Ok(PipelineEvent::Log(line)) => self.push_log(&line),
                 Ok(PipelineEvent::Finished(report)) => {
                     finished = Some(*report);
                     break;
                 }
+                Ok(PipelineEvent::IndexFinished(report)) => {
+                    index_finished = Some(*report);
+                    break;
+                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    finished = Some(RunReport {
-                        session: self.session.unwrap_or(0),
-                        failure: Some("The transcription job stopped unexpectedly.".into()),
-                        ..RunReport::default()
-                    });
+                    let session = self.session.unwrap_or(0);
+                    match kind {
+                        JobKind::Transcribe => {
+                            finished = Some(RunReport {
+                                session,
+                                failure: Some("The transcription job stopped unexpectedly.".into()),
+                                ..RunReport::default()
+                            });
+                        }
+                        JobKind::Index | JobKind::Report => {
+                            let k = if kind == JobKind::Index {
+                                IndexKind::Index
+                            } else {
+                                IndexKind::Report
+                            };
+                            index_finished = Some(IndexReport::failed(k, session, "The job stopped unexpectedly."));
+                        }
+                    }
                     break;
                 }
             }
@@ -786,6 +861,9 @@ impl App {
         }
         if let Some(report) = finished {
             self.finish_job(report);
+        }
+        if let Some(report) = index_finished {
+            self.finish_index(report);
         }
     }
 
@@ -818,6 +896,7 @@ impl App {
         let has_transcript = report.transcript_md.is_some();
         let ok = report.ok();
         self.report = Some(report);
+        self.index_report = None;
 
         // The moved files are no longer where they were chosen.
         self.chosen.retain(|p| p.exists());
@@ -831,6 +910,114 @@ impl App {
             self.reload_transcript_if_visible();
             self.set_status(kind, headline);
         }
+        if self.quit_after_job {
+            self.should_quit = true;
+        }
+    }
+
+    // -- indexing and the alias report ------------------------------------------------------
+
+    fn has_transcript(&self) -> bool {
+        self.session_paths()
+            .is_some_and(|sp| Path::new(&sp.transcript_md).is_file())
+    }
+
+    /// Read the selected campaign again from disk: the GM may have edited its aliases
+    /// since it was chosen.
+    fn reload_selected(&mut self) -> Result<(), String> {
+        let (Some(i), Some(slug)) = (self.list_state.selected(), self.selected().map(|(s, _)| s.clone())) else {
+            return Err("Pick a campaign first.".into());
+        };
+        let fresh = Campaign::load(&self.settings, &slug).map_err(|e| e.0)?;
+        if i < self.campaigns.len() {
+            self.campaigns[i].1 = fresh;
+        }
+        Ok(())
+    }
+
+    /// `i`: index the transcript. A campaign with no `review_only` list is asked about first.
+    fn begin_index(&mut self) {
+        if let Err(e) = self.reload_selected() {
+            self.set_status(StatusKind::Error, e);
+            return;
+        }
+        if self.campaign().is_some_and(|c| !c.has_review_only()) {
+            self.modal = Some(Modal::NoReviewOnly);
+        } else {
+            self.start_index_job(IndexKind::Index);
+        }
+    }
+
+    fn start_index_job(&mut self, kind: IndexKind) {
+        if let Err(e) = self.reload_selected() {
+            self.set_status(StatusKind::Error, e);
+            return;
+        }
+        let (Some(camp), Some(session)) = (self.campaign(), self.session) else {
+            return;
+        };
+        let plan = legacy::locate(&self.settings).and_then(|l| plan_index(&self.settings, camp, session, kind, &l));
+        let plan = match plan {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(StatusKind::Error, e.0);
+                return;
+            }
+        };
+        let (tx, rx) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&cancel);
+        let handle = thread::spawn(move || execute_index(plan, tx, flag));
+        let job_kind = if kind == IndexKind::Index {
+            JobKind::Index
+        } else {
+            JobKind::Report
+        };
+        self.attach_index_job(job_kind, rx, cancel, Some(handle));
+    }
+
+    fn finish_index(&mut self, report: IndexReport) {
+        if let Some(h) = self.job.take().and_then(|mut job| job.handle.take()) {
+            let _ = h.join();
+        }
+        self.push_log("");
+        self.push_log("== Result ==");
+        self.push_log(&report.headline());
+        if let Some(why) = &report.failure {
+            for line in why.lines().skip(1) {
+                self.push_log(line);
+            }
+        }
+        if let Some(out) = &report.output {
+            self.push_log(out);
+        }
+        let mut headline = report.headline();
+        let kind = if report.ok() {
+            StatusKind::Ok
+        } else if report.cancelled {
+            StatusKind::Warn
+        } else {
+            StatusKind::Error
+        };
+        if report.ok()
+            && report.kind == IndexKind::Report
+            && let Some(path) = &report.output
+        {
+            match (self.opener)(path) {
+                Ok(()) => headline.push_str(" Opened alias_candidates.md."),
+                Err(e) => headline.push_str(&format!(" It is at {path} (could not open it: {e}).")),
+            }
+        }
+        if let Some(why) = &report.failure {
+            // The first line says what failed; the rest says what to do.
+            let more: Vec<&str> = why.lines().skip(1).collect();
+            if !more.is_empty() {
+                headline = format!("{headline} {}", more.join(" "));
+            }
+        }
+        self.log_back = 0;
+        self.index_report = Some(report);
+        self.set_status(kind, headline);
         if self.quit_after_job {
             self.should_quit = true;
         }
@@ -882,6 +1069,8 @@ impl App {
             KeyCode::Char('o') => self.do_action(Action::OpenFolder),
             KeyCode::Char('c') => self.do_action(Action::ClearFiles),
             KeyCode::Char('r') => self.do_action(Action::Resolve),
+            KeyCode::Char('i') => self.do_action(Action::Index),
+            KeyCode::Char('a') => self.do_action(Action::Report),
             KeyCode::Char('R') => self.do_action(Action::Rescan),
             KeyCode::Char('z') => self.toggle_zoom(),
             KeyCode::Esc if self.zoom => self.zoom = false,
@@ -972,6 +1161,12 @@ impl App {
                 Outcome::Open => self.modal = Some(Modal::Picker(picker)),
                 Outcome::Cancel => self.picker_dir = Some(picker.dir.clone()),
                 Outcome::Done(files) => self.picked(files, picker.dir.clone()),
+            },
+            Modal::NoReviewOnly => match key.code {
+                KeyCode::Enter | KeyCode::Char('a') | KeyCode::Char('r') => self.start_index_job(IndexKind::Report),
+                KeyCode::Char('i') => self.start_index_job(IndexKind::Index),
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {}
+                _ => self.modal = Some(Modal::NoReviewOnly),
             },
             Modal::Resolve(mut form) => match form.on_key(key) {
                 resolve::Outcome::Open => self.modal = Some(Modal::Resolve(form)),
@@ -1170,6 +1365,15 @@ impl App {
                 Outcome::Cancel => self.picker_dir = Some(picker.dir.clone()),
                 Outcome::Done(files) => self.picked(files, picker.dir.clone()),
             },
+            Modal::NoReviewOnly => {
+                if left_click && self.hit.ask_report.contains(pos) {
+                    self.start_index_job(IndexKind::Report);
+                } else if left_click && self.hit.ask_index.contains(pos) {
+                    self.start_index_job(IndexKind::Index);
+                } else if !(left_click && self.hit.ask_cancel.contains(pos)) {
+                    self.modal = Some(Modal::NoReviewOnly);
+                }
+            }
             Modal::Resolve(mut form) => {
                 if !left_click {
                     self.modal = Some(Modal::Resolve(form));

@@ -269,10 +269,9 @@ impl Settings {
         &self.env
     }
 
-    /// The command name or path of whisper-cli: `$GM_WHISPER_BIN`, else the
-    /// `whisper_bin` config key. A bare name is looked up on PATH, so it is not
-    /// made absolute.
-    pub fn whisper_bin(&self) -> Result<Option<Sourced>, CampaignError> {
+    /// A command name or path from an environment variable, else a config key. A bare
+    /// name is looked up on PATH, so it is not made absolute.
+    fn command_setting(&self, env_name: &str, key: &str) -> Result<Option<Sourced>, CampaignError> {
         let pick = |raw: &str, source: String| {
             let expanded = pyish::expanduser(raw, self.env_raw("HOME"));
             let value = if expanded.contains('/') {
@@ -282,13 +281,30 @@ impl Settings {
             };
             Sourced { value, source }
         };
-        if let Some(v) = self.env("GM_WHISPER_BIN") {
-            return Ok(Some(pick(v, "$GM_WHISPER_BIN".into())));
+        if let Some(v) = self.env(env_name) {
+            return Ok(Some(pick(v, format!("${env_name}"))));
         }
-        match self.config()?.get("whisper_bin").filter(|v| pyish::truthy(v)) {
-            Some(v) => Ok(Some(pick(&self.config_string("whisper_bin", v)?, self.config_path()))),
+        match self.config()?.get(key).filter(|v| pyish::truthy(v)) {
+            Some(v) => Ok(Some(pick(&self.config_string(key, v)?, self.config_path()))),
             None => Ok(None),
         }
+    }
+
+    /// The command name or path of whisper-cli: `$GM_WHISPER_BIN`, else the
+    /// `whisper_bin` config key.
+    pub fn whisper_bin(&self) -> Result<Option<Sourced>, CampaignError> {
+        self.command_setting("GM_WHISPER_BIN", "whisper_bin")
+    }
+
+    /// The Python for indexing: `$GM_PYTHON`, else the `python` config key. ChromaDB
+    /// usually lives in a venv or a `--user` install, so this is a setting.
+    pub fn python(&self) -> Result<Option<Sourced>, CampaignError> {
+        self.command_setting("GM_PYTHON", "python")
+    }
+
+    /// The Python to run, defaulting to `python3` on PATH.
+    pub fn effective_python(&self) -> Result<String, CampaignError> {
+        Ok(self.python()?.map_or_else(|| "python3".to_string(), |s| s.value))
     }
 
     /// `$GM_WHISPER_MODEL` or the `whisper_model` config key: the ggml model file.

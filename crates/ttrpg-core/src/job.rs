@@ -7,26 +7,20 @@
 //! own thread and report through a channel; the UI thread never waits on it.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
-use std::thread::{self, JoinHandle};
+use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::audio::{is_audio_file_name, list_audio_files};
 use crate::campaign::Campaign;
 use crate::error::CampaignError;
+use crate::proc::run_streaming;
 use crate::progress::{ProgressEvent, parse_progress_line};
 use crate::settings::{Settings, Sourced};
 use crate::state::read_state_rows;
 use crate::stock::StockRule;
-
-/// Seconds between asking the script to stop and forcing it.
-const GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MovePlan {
@@ -213,10 +207,21 @@ fn move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// Everything the UI hears from a running job.
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
-    Moving { index: usize, total: usize, name: String },
+    Moving {
+        index: usize,
+        total: usize,
+        name: String,
+    },
     Progress(ProgressEvent),
     Log(String),
+    /// A step of the index job began: what to call it and where the bar goes.
+    Stage {
+        label: String,
+        fraction: f64,
+    },
     Finished(Box<RunReport>),
+    /// The index or alias-report job ended (see [`crate::index`]).
+    IndexFinished(Box<crate::index::IndexReport>),
 }
 
 /// How a run ended, for the summary line and the log.
@@ -291,41 +296,6 @@ fn send(tx: &Sender<PipelineEvent>, ev: PipelineEvent) {
     let _ = tx.send(ev);
 }
 
-fn spawn_reader<R: Read + Send + 'static>(stream: R, lines: Sender<String>) -> JoinHandle<()> {
-    thread::spawn(move || {
-        let mut reader = BufReader::new(stream);
-        let mut buf = Vec::new();
-        loop {
-            buf.clear();
-            match reader.read_until(b'\n', &mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    let line = String::from_utf8_lossy(&buf).trim_end_matches(['\r', '\n']).to_string();
-                    if lines.send(line).is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    })
-}
-
-/// Signal the script's whole process group (bash, whisper-cli, ffmpeg).
-fn signal_group(pid: u32, signal: &str) {
-    let _ = Command::new("bash")
-        .args([
-            "-c",
-            "kill -s \"$1\" -- \"-$2\" 2>/dev/null",
-            "kill",
-            signal,
-            &pid.to_string(),
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
 /// Run the job to the end and send [`PipelineEvent::Finished`] last. Never panics on
 /// I/O trouble: every failure becomes `RunReport::failure`.
 pub fn execute(plan: JobPlan, tx: Sender<PipelineEvent>, cancel: Arc<AtomicBool>) {
@@ -393,72 +363,40 @@ fn run(plan: &JobPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool) -> RunRe
 
     let baseline = read_state_rows(&plan.state_file).len();
 
-    let mut child = match Command::new(&plan.program)
-        .args(&plan.args)
-        .env_clear()
-        .envs(&plan.env)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-    {
-        Ok(c) => c,
+    let mut done_names: Vec<String> = Vec::new();
+    let outcome = run_streaming(
+        &plan.program,
+        &plan.args,
+        &plan.env,
+        cancel,
+        |line| match parse_progress_line(&line) {
+            Some(ev) => {
+                match &ev {
+                    ProgressEvent::Start { total } => report.tracks_found = Some(*total),
+                    ProgressEvent::FileDone { name, .. } => done_names.push(name.clone()),
+                    ProgressEvent::PostDone => report.postprocess_done = true,
+                    _ => {}
+                }
+                send(tx, PipelineEvent::Progress(ev));
+            }
+            None => send(tx, PipelineEvent::Log(line)),
+        },
+        || {
+            send(
+                tx,
+                PipelineEvent::Log("Cancelling: stopping the script and its children...".into()),
+            )
+        },
+    );
+    let outcome = match outcome {
+        Ok(o) => o,
         Err(e) => {
             report.failure = Some(format!("Could not start {}: {e}", plan.program));
             return report;
         }
     };
-    let pid = child.id();
-    let (line_tx, line_rx) = mpsc::channel::<String>();
-    let readers = [
-        child.stdout.take().map(|s| spawn_reader(s, line_tx.clone())),
-        child.stderr.take().map(|s| spawn_reader(s, line_tx.clone())),
-    ];
-    drop(line_tx);
-
-    let mut done_names: Vec<String> = Vec::new();
-    let mut stop_requested: Option<Instant> = None;
-    let mut forced = false;
-    loop {
-        match line_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(line) => match parse_progress_line(&line) {
-                Some(ev) => {
-                    match &ev {
-                        ProgressEvent::Start { total } => report.tracks_found = Some(*total),
-                        ProgressEvent::FileDone { name, .. } => done_names.push(name.clone()),
-                        ProgressEvent::PostDone => report.postprocess_done = true,
-                        _ => {}
-                    }
-                    send(tx, PipelineEvent::Progress(ev));
-                }
-                None => log(line),
-            },
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
-        }
-        if cancel.load(Ordering::Relaxed) {
-            match stop_requested {
-                None => {
-                    report.cancelled = true;
-                    log("Cancelling: stopping the script and its children...".into());
-                    signal_group(pid, "TERM");
-                    stop_requested = Some(Instant::now());
-                }
-                Some(at) if !forced && at.elapsed() > GRACE => {
-                    signal_group(pid, "KILL");
-                    forced = true;
-                }
-                Some(at) if at.elapsed() > GRACE * 3 => break,
-                Some(_) => {}
-            }
-        }
-    }
-    let status = child.wait();
-    for r in readers.into_iter().flatten() {
-        let _ = r.join();
-    }
-    report.exit_code = status.ok().and_then(|s| s.code());
+    report.cancelled = outcome.cancelled;
+    report.exit_code = outcome.exit_code;
 
     // What actually happened to each file this run, from the rows it appended.
     let rows = read_state_rows(&plan.state_file);

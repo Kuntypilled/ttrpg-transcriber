@@ -7,9 +7,11 @@ pub mod aliases;
 pub mod audio;
 pub mod campaign;
 pub mod error;
+pub mod index;
 pub mod job;
 pub mod legacy;
 pub mod preflight;
+pub mod proc;
 pub mod progress;
 pub mod pyish;
 pub mod report;
@@ -24,6 +26,7 @@ pub use campaign::{
     normalize_character, session_folder, split_slug,
 };
 pub use error::CampaignError;
+pub use index::{IndexKind, IndexPlan, IndexReport, execute_index, plan_index};
 pub use job::{JobPlan, PipelineEvent, RunReport, execute, plan_job};
 pub use progress::{Phase, ProgressEvent, Tracker, is_whisper_segment_line, parse_progress_line};
 pub use settings::{Settings, Sourced};

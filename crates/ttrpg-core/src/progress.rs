@@ -51,6 +51,8 @@ pub enum Phase {
     Moving,
     Transcribing,
     PostProcessing,
+    /// Indexing or reporting: not a transcription phase.
+    Working,
     Finished,
 }
 
@@ -99,6 +101,17 @@ impl Tracker {
         self.phase = Phase::Transcribing;
         self.fraction = 0.08;
         self.label = "Starting...".into();
+    }
+
+    /// A step of another kind of job (indexing): the bar goes to `fraction` with this label.
+    pub fn stage(&mut self, label: &str, fraction: f64) {
+        self.phase = if fraction >= 1.0 {
+            Phase::Finished
+        } else {
+            Phase::Working
+        };
+        self.fraction = fraction.clamp(0.0, 1.0);
+        self.label = label.to_string();
     }
 
     pub fn apply(&mut self, ev: &ProgressEvent) {

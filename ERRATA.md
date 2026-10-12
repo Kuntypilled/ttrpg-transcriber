@@ -116,6 +116,22 @@ priority.
 | Esc with something typed asks first; saving an empty form says so instead of closing | The original dialog discarded silently |
 | Resolving is refused while a job runs | The script reads the alias file for each track, so a change mid-run could label tracks differently |
 
+### Milestone 4: Index to Memory and the alias report
+
+| Difference | Why |
+|---|---|
+| The index job stops at the first step that fails and says which; the chunk file is kept when only the Chroma step failed | The GUI logged and carried on |
+| An empty chunk file is a failure before anything is stored | PORTING.md 7.3 says to fail; the original checked nothing |
+| "ChromaDB is not installed" gets the install command and the `python` setting, not a traceback | The usual first-run problem |
+| The `python` setting (`GM_PYTHON`) picks the interpreter | The GUI used `sys.executable`, which has no analogue here |
+| The campaign is reloaded from disk before indexing and before the report | The GM may have edited it since it was chosen (PORTING.md 7.3) |
+| `i` and `a` are refused while any job runs | One job at a time |
+| The alias report opens itself when it finishes | PORTING.md 7.3 |
+
+Known limits of milestone 4: ChromaDB itself is not tested here (no ChromaDB in the
+test environment); the tests stand in for it and check what is passed to it and how
+the app reads the answer. `query` and `info` against the store are not in the app.
+
 Known limits of milestone 3: the form edits only `discord_names`. A character that is
 not in `players` is accepted as typed (the original did the same), so a typo makes a
 new character. The line-up of columns inside the file's entries is not copied: only

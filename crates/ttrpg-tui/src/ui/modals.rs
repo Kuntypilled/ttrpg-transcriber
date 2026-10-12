@@ -24,6 +24,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Modal::Confirm(plan) => confirm(frame, app, plan),
         Modal::Picker(picker) => file_picker(frame, picker),
         Modal::Resolve(form) => resolve(frame, app, form),
+        Modal::NoReviewOnly => no_review_only(frame, app),
     }
     app.modal = Some(modal);
 }
@@ -65,6 +66,14 @@ fn help(frame: &mut Frame) {
         key_row("f", "choose the Craig audio files"),
         key_row("s", "start: move the files in and transcribe"),
         key_row("x", "cancel the running job"),
+        key_row(
+            "i",
+            "index the session's transcript into the campaign's memory (ChromaDB)",
+        ),
+        key_row(
+            "a",
+            "alias report: likely garbled names, written to alias_candidates.md",
+        ),
         key_row("o", "open the session folder"),
         key_row("c", "clear the chosen files"),
         key_row("t", "at the confirm step: keep or drop whisper's invented lines"),
@@ -247,6 +256,57 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
         Span::styled(stock_text, LABEL),
     ]);
     frame.render_widget(Paragraph::new(line), buttons);
+}
+
+/// Indexing a campaign with no `review_only` list: PORTING.md section 7.3's three choices.
+fn no_review_only(frame: &mut Frame, app: &mut App) {
+    let lines = vec![
+        Line::default(),
+        Line::from("  This campaign has no review_only list yet."),
+        Line::default(),
+        Line::from(
+            "  Names that Whisper garbles into real English words (\"borrow\" for a name like Corrow) are \
+             never fixed automatically. Indexing now stores them as they are, and fixing them later means \
+             indexing again.",
+        ),
+        Line::default(),
+        Line::from(Span::styled(
+            "  The alias report reads the transcript and lists the likely ones to copy into canon_aliases.json. \
+             It writes nothing to that file.",
+            DIM,
+        )),
+        Line::default(),
+    ];
+    let area = frame.area();
+    let w = area.width.saturating_sub(6).clamp(34, 74);
+    let wrapped: usize = lines
+        .iter()
+        .map(|l| (l.width() / usize::from(w.saturating_sub(4)).max(1)) + 1)
+        .sum();
+    let h = (wrapped as u16 + 4).min(area.height.saturating_sub(2));
+    let inner = popup(frame, w, h, "No review_only list");
+    let [body, buttons] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
+
+    let report_text = "[Enter] Run the report first";
+    let index_text = "[i] Index anyway";
+    let cancel_text = "[Esc] Cancel";
+    let width = |t: &str| u16::try_from(text::width(t)).unwrap_or(0);
+    let r = Rect::new(buttons.x + 1, buttons.y, width(report_text), 1).intersection(buttons);
+    let i = Rect::new(r.x + width(report_text) + 3, buttons.y, width(index_text), 1).intersection(buttons);
+    let c = Rect::new(i.x + width(index_text) + 3, buttons.y, width(cancel_text), 1).intersection(buttons);
+    (app.hit.ask_report, app.hit.ask_index, app.hit.ask_cancel) = (r, i, c);
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(report_text, OK.add_modifier(Modifier::BOLD)),
+            Span::raw("   "),
+            Span::styled(index_text, LABEL),
+            Span::raw("   "),
+            Span::styled(cancel_text, BOLD),
+        ])),
+        buttons,
+    );
 }
 
 /// The resolve-speakers form: one row per unknown Discord name.

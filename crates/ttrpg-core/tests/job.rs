@@ -233,6 +233,7 @@ fn a_full_run_moves_files_runs_the_script_and_reports_honestly() {
             PipelineEvent::Progress(ProgressEvent::PostDone) => "postdone",
             PipelineEvent::Log(_) => "log",
             PipelineEvent::Finished(_) => "finished",
+            PipelineEvent::Stage { .. } | PipelineEvent::IndexFinished(_) => "index",
         })
         .collect();
     let compact: Vec<&str> = kinds.iter().copied().filter(|k| *k != "log").collect();

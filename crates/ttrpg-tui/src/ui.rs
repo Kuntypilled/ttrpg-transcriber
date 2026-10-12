@@ -228,7 +228,7 @@ fn draw_session(frame: &mut Frame, area: Rect, app: &mut App) {
             Span::styled(state, style),
         ]));
     }
-    lines.push(Line::default());
+    lines.push(review_banner(app, w));
     let unknown = app.unknown_tracks();
     let summary = if app.tracks.is_empty() {
         Span::styled("none yet", DIM)
@@ -554,6 +554,29 @@ fn transcript_view(app: &mut App, inner: Rect) -> (Vec<Line<'static>>, Option<St
     (lines, Some(format!(" lines {}-{} of {} ", start + 1, end, rows.len())))
 }
 
+/// The standing nudge for a campaign with no `review_only` list: the alias report seeds it
+/// before the first index (PORTING.md section 7.1).
+fn review_banner(app: &App, width: usize) -> Line<'static> {
+    let Some(camp) = app.campaign() else {
+        return Line::default();
+    };
+    if camp.has_review_only() {
+        return Line::default();
+    }
+    let transcribed = camp.session_numbers(&app.settings).is_ok_and(|n| !n.is_empty());
+    if transcribed {
+        Line::from(Span::styled(
+            text::truncate("⚠ no review_only list: a = alias report", width),
+            WARN,
+        ))
+    } else {
+        Line::from(Span::styled(
+            text::truncate("no review_only yet (a = alias report)", width),
+            DIM,
+        ))
+    }
+}
+
 // -- bottom rows ----------------------------------------------------------------------------
 
 const SPINNER: [char; 4] = ['|', '/', '-', '\\'];
@@ -567,6 +590,26 @@ fn draw_gauge(frame: &mut Frame, area: Rect, app: &App) {
             format!("{spin} {}   {}", t.label(), text::clock(job.started.elapsed())),
             Color::Green,
         )
+    } else if let Some(r) = &app.index_report {
+        let took = text::clock(r.elapsed);
+        if r.ok() {
+            (
+                1.0,
+                format!(
+                    "{}   {took}",
+                    if r.kind == ttrpg_core::IndexKind::Index {
+                        "Indexed"
+                    } else {
+                        "Report ready"
+                    }
+                ),
+                Color::Green,
+            )
+        } else if r.cancelled {
+            (t.fraction(), format!("Cancelled   {took}"), Color::Yellow)
+        } else {
+            (t.fraction().max(0.02), format!("Failed   {took}"), Color::Red)
+        }
     } else if let Some(r) = &app.report {
         let took = text::clock(r.elapsed);
         if r.ok() {
@@ -605,21 +648,40 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Paragraph::new(line), area);
 }
 
-/// The clickable button bar. Disabled buttons stay visible and say why when used.
+/// The clickable button bar. Disabled buttons stay visible and say why when used. When
+/// the terminal is too narrow for all of them the least used drop out first (their keys
+/// still work), so Help and Quit are always there.
 fn draw_buttons(frame: &mut Frame, area: Rect, app: &mut App) {
-    let buttons: [(char, &str, Action); 8] = [
-        ('f', "Files", Action::ChooseFiles),
-        ('r', "Resolve", Action::Resolve),
-        ('s', "Start", Action::Start),
-        ('x', "Cancel", Action::Cancel),
-        ('o', "Open folder", Action::OpenFolder),
-        ('c', "Clear files", Action::ClearFiles),
-        ('?', "Help", Action::Help),
-        ('q', "Quit", Action::Quit),
+    // (key, label, action, drop order: 0 = never dropped, higher goes first)
+    let all: [(char, &str, Action, u8); 10] = [
+        ('f', "Files", Action::ChooseFiles, 0),
+        ('r', "Resolve", Action::Resolve, 3),
+        ('s', "Start", Action::Start, 0),
+        ('x', "Cancel", Action::Cancel, 0),
+        ('i', "Index", Action::Index, 2),
+        ('a', "Report", Action::Report, 4),
+        ('o', "Open folder", Action::OpenFolder, 5),
+        ('c', "Clear files", Action::ClearFiles, 6),
+        ('?', "Help", Action::Help, 0),
+        ('q', "Quit", Action::Quit, 0),
     ];
+    let width_of = |(key, name, ..): &(char, &str, Action, u8)| text::width(&format!("[{key}] {name}")) + 2;
+    let mut shown: Vec<_> = all.to_vec();
+    while shown.iter().map(width_of).sum::<usize>().saturating_sub(2) > usize::from(area.width) {
+        let Some(idx) = shown
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.3 > 0)
+            .max_by_key(|(_, b)| b.3)
+            .map(|(i, _)| i)
+        else {
+            break;
+        };
+        shown.remove(idx);
+    }
     let mut spans = Vec::new();
     let mut x = area.x;
-    for (key, name, action) in buttons {
+    for (key, name, action, _) in shown {
         let text = format!("[{key}] {name}");
         let w = u16::try_from(text::width(&text)).unwrap_or(0);
         if x.saturating_add(w) > area.x.saturating_add(area.width) {

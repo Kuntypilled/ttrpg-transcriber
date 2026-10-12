@@ -54,6 +54,22 @@ cat > "${of}.json" <<'J'
 J
 "#;
 
+/// Runs the real Python for the chunker and the alias report, and stands in for the
+/// Python that has ChromaDB.
+const FAKE_PYTHON: &str = r#"#!/usr/bin/env bash
+case "$1" in
+  *chroma_memory.py)
+    [[ -n "${FAKE_SLEEP:-}" ]] && sleep "$FAKE_SLEEP"
+    if [[ -n "${FAKE_NO_CHROMA:-}" ]]; then
+      echo "ModuleNotFoundError: No module named 'chromadb'" >&2
+      exit 1
+    fi
+    echo "Upserted 2 chunks into /fake/db. Collection now holds 5."
+    ;;
+  *) exec python3 "$@" ;;
+esac
+"#;
+
 macro_rules! require_tools {
     () => {
         let present = ["bash", "python3", "ffmpeg", "jq"].iter().all(|t| {
@@ -115,6 +131,9 @@ impl Rig {
         fs::write(&stub, STUB).unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
         fs::write(tmp.path().join("model.bin"), "x").unwrap();
+        let fake_python = tmp.path().join("bin/fake-python");
+        fs::write(&fake_python, FAKE_PYTHON).unwrap();
+        fs::set_permissions(&fake_python, fs::Permissions::from_mode(0o755)).unwrap();
         fs::create_dir_all(tmp.path().join("home/Downloads")).unwrap();
 
         let mut env = HashMap::from([
@@ -128,6 +147,7 @@ impl Rig {
             ("GM_TRANSCRIBER_CONFIG".to_string(), p("none.json")),
             ("GM_WHISPER_BIN".to_string(), stub.to_string_lossy().into_owned()),
             ("GM_WHISPER_MODEL".to_string(), p("model.bin")),
+            ("GM_PYTHON".to_string(), fake_python.to_string_lossy().into_owned()),
         ]);
         env.extend(extra_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         let opened = Rc::new(RefCell::new(Vec::new()));
@@ -924,4 +944,188 @@ fn resolve_is_refused_while_a_job_runs() {
     assert_eq!(rig.app.status.text, "A job is running.");
     rig.press('x');
     rig.pump_until("cancel", |a| !a.running());
+}
+
+const INDEX_ALIASES: &str = r#"{
+  "campaign": "Demo",
+  "system": "daggerheart",
+  "names": ["Marrow Hall"],
+  "aliases": {"Marrow Hall": ["Marro Hall"]},
+  "discord_names": {
+    "gmperson": {"player": "Sky", "character": null, "role": "GM"},
+    "riverone": {"player": "Pat", "character": "Mara_Quill", "role": "Player"},
+    "rivertwo": {"player": "Lee", "character": "Tomas_Ink", "role": "Player"}
+  },
+  "players": {"Mara Quill": "Pat", "Tomas Ink": "Lee"},
+  "speaker_map": [
+    {"match": "gm", "player": "Sky", "character": null},
+    {"match": "mara", "player": "Pat", "character": "Mara_Quill"},
+    {"match": "tomas", "player": "Lee", "character": "Tomas_Ink"}
+  ]
+}
+"#;
+
+impl Rig {
+    /// Three tracks transcribed, so the session has a transcript.md to index.
+    fn transcribed(&mut self, aliases: &str) {
+        self.with_aliases(aliases);
+        for n in ["1-gmperson.flac", "2-riverone.flac", "3-rivertwo.flac"] {
+            self.tone(n);
+        }
+        self.choose_all_in_downloads();
+        self.start_and_confirm();
+        self.pump_until("the transcription", |a| !a.running());
+        assert!(self.app.report.as_ref().unwrap().ok());
+    }
+
+    fn chunks_path(&self) -> PathBuf {
+        self.tmp
+            .path()
+            .join("vault/0.2_campaigns/demo/08_transcripts/chunks/s01_chunks.jsonl")
+    }
+}
+
+#[test]
+fn indexing_is_off_until_there_is_a_transcript_and_says_why() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.with_aliases(INDEX_ALIASES);
+    assert!(!rig.app.enabled(Action::Index) && !rig.app.enabled(Action::Report));
+    rig.press('i');
+    assert_eq!(rig.app.status.text, "There is no transcript.md for this session yet.");
+    assert!(rig.app.modal.is_none() && !rig.app.running());
+}
+
+#[test]
+fn without_a_review_only_list_indexing_asks_and_the_report_comes_first_by_default() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.transcribed(INDEX_ALIASES);
+    let banner = rig.draw();
+    assert!(banner.contains("no review_only list: a = alias report"), "{banner}");
+
+    rig.press('i');
+    assert!(matches!(rig.app.modal, Some(Modal::NoReviewOnly)));
+    let ask = rig.draw();
+    for want in [
+        "No review_only list",
+        "This campaign has no review_only list yet.",
+        "[Enter] Run the report first",
+        "[i] Index anyway",
+        "[Esc] Cancel",
+    ] {
+        assert!(ask.contains(want), "missing {want:?}:\n{ask}");
+    }
+    // Esc asks nothing further and starts nothing.
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(rig.app.modal.is_none() && !rig.app.running());
+    assert!(!rig.chunks_path().exists());
+
+    // Enter runs the report, then opens it.
+    rig.press('i');
+    rig.app.on_key(key(KeyCode::Enter));
+    assert!(rig.app.running());
+    rig.pump_until("the report", |a| !a.running());
+    let r = rig.app.index_report.clone().unwrap();
+    assert!(r.ok(), "{}", r.headline());
+    let report = rig
+        .tmp
+        .path()
+        .join("vault/0.2_campaigns/demo/08_transcripts/S01/alias_candidates.md");
+    assert!(report.is_file());
+    assert_eq!(
+        rig.opened.borrow().last().map(String::as_str),
+        Some(report.to_str().unwrap())
+    );
+    assert!(
+        rig.app
+            .status
+            .text
+            .starts_with("Alias report ready. Nothing was written to canon_aliases.json. Opened"),
+        "{}",
+        rig.app.status.text
+    );
+    assert_eq!(rig.app.status.kind, StatusKind::Ok);
+    assert!(rig.draw().contains("Report ready"));
+    assert!(!rig.chunks_path().exists(), "a report does not index");
+}
+
+#[test]
+fn index_anyway_chunks_and_stores_and_the_result_is_in_the_status_and_the_log() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.transcribed(INDEX_ALIASES);
+    rig.press('i');
+    rig.press('i'); // index anyway
+    assert!(rig.app.running());
+    assert_eq!(rig.app.tab, Tab::Log);
+    rig.pump_until("indexing", |a| !a.running());
+    let r = rig.app.index_report.clone().unwrap();
+    assert!(r.ok(), "{}", r.headline());
+    assert_eq!(
+        rig.app.status.text,
+        "Indexed 2 chunks of session 1; the store now holds 5."
+    );
+    assert_eq!(rig.app.status.kind, StatusKind::Ok);
+    assert!(rig.chunks_path().is_file());
+    let log = rig.app.log.iter().cloned().collect::<Vec<_>>().join("\n");
+    assert!(
+        log.contains("Upserted 2 chunks") && log.contains("== Result =="),
+        "{log}"
+    );
+    let screen = rig.draw();
+    assert!(screen.contains("Indexed "), "{screen}");
+}
+
+#[test]
+fn with_a_review_only_list_indexing_starts_straight_away() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    let with_review = INDEX_ALIASES.replace(
+        "\"names\"",
+        "\"review_only\": {\"Marrow Hall\": [\"borrow hall\"]},\n  \"names\"",
+    );
+    rig.transcribed(&with_review);
+    assert!(!rig.draw().contains("no review_only list"));
+    rig.press('i');
+    assert!(rig.app.modal.is_none(), "no question");
+    assert!(rig.app.running());
+    rig.pump_until("indexing", |a| !a.running());
+    assert!(rig.app.index_report.as_ref().unwrap().ok());
+}
+
+#[test]
+fn a_missing_chromadb_is_explained_in_the_status() {
+    require_tools!();
+    let mut rig = Rig::new(&[("FAKE_NO_CHROMA", "1")]);
+    rig.transcribed(INDEX_ALIASES);
+    rig.press('i');
+    rig.press('i');
+    rig.pump_until("indexing", |a| !a.running());
+    let r = rig.app.index_report.clone().unwrap();
+    assert!(!r.ok());
+    let status = rig.app.status.text.clone();
+    assert!(
+        status.contains("Storing in ChromaDB failed") && status.contains("pip install -r"),
+        "{status}"
+    );
+    assert_eq!(rig.app.status.kind, StatusKind::Error);
+    assert!(rig.draw().contains("Failed"));
+    assert!(rig.chunks_path().is_file(), "the chunk file is kept");
+}
+
+#[test]
+fn x_cancels_indexing_and_the_app_says_nothing_was_added() {
+    require_tools!();
+    let mut rig = Rig::new(&[("FAKE_SLEEP", "30")]);
+    rig.transcribed(INDEX_ALIASES);
+    rig.press('i');
+    rig.press('i');
+    rig.pump_until("the storing step", |a| a.tracker.label().starts_with("Embedding"));
+    rig.press('x');
+    rig.pump_until("cancel", |a| !a.running());
+    let r = rig.app.index_report.clone().unwrap();
+    assert!(r.cancelled);
+    assert!(rig.app.status.text.contains("cancelled") && rig.app.status.text.contains("Nothing was added"));
+    assert_eq!(rig.app.status.kind, StatusKind::Warn);
 }

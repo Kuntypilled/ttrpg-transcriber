@@ -795,6 +795,80 @@ fn clicking_a_field_focuses_it_and_clicking_save_writes_the_file() {
     assert!(render(&mut w.app, 130, 32).contains("Zed_Wick"));
 }
 
+// -- index and report ---------------------------------------------------------------------------
+
+#[test]
+fn a_campaign_without_review_only_carries_a_banner_that_changes_once_a_session_exists() {
+    let mut w = world(true);
+    // alpha has a review_only list: no banner.
+    assert!(!render(&mut w.app, 130, 32).contains("no review_only"));
+    // beta has none, and no session has been transcribed yet.
+    w.press('j');
+    w.app.on_key(KeyEvent {
+        code: KeyCode::Down,
+        ..key('x')
+    });
+    assert_eq!(w.app.campaign().unwrap().slug, "beta");
+    let early = render(&mut w.app, 130, 32);
+    assert!(early.contains("no review_only yet (a = alias report)"), "{early}");
+    // Once a transcript exists the nudge turns into a warning.
+    let sp = w.app.session_paths().unwrap();
+    fs::create_dir_all(&sp.session_dir).unwrap();
+    fs::write(&sp.transcript_md, "**[00:00:01] GM:**  \nHello.\n\n").unwrap();
+    let later = render(&mut w.app, 130, 32);
+    assert!(later.contains("⚠ no review_only list: a = alias report"), "{later}");
+}
+
+#[test]
+fn the_button_bar_drops_the_least_used_buttons_first_and_never_help_or_quit() {
+    let mut w = world(true);
+    let wide = render(&mut w.app, 150, 30);
+    for want in [
+        "[f] Files",
+        "[r] Resolve",
+        "[s] Start",
+        "[i] Index",
+        "[a] Report",
+        "[o] Open folder",
+        "[c] Clear files",
+    ] {
+        assert!(wide.contains(want), "missing {want:?}:\n{wide}");
+    }
+    let narrow = render(&mut w.app, 70, 30);
+    let bar = narrow.lines().last().unwrap().to_string();
+    for want in ["[f] Files", "[s] Start", "[x] Cancel", "[?] Help", "[q] Quit"] {
+        assert!(bar.contains(want), "missing {want:?} in {bar:?}");
+    }
+    assert!(!bar.contains("Clear files") && !bar.contains("Open folder"), "{bar}");
+    // Every button that is drawn can be clicked.
+    assert_eq!(w.app.hit.buttons.len(), bar.matches('[').count());
+}
+
+#[test]
+fn the_index_question_and_the_help_describe_the_choices() {
+    let mut w = world(true);
+    w.app.modal = Some(Modal::NoReviewOnly);
+    let ask = render(&mut w.app, 130, 32);
+    for want in [
+        "No review_only list",
+        "never fixed automatically",
+        "writes nothing to that file",
+        "[Enter] Run the report first",
+        "[i] Index anyway",
+        "[Esc] Cancel",
+    ] {
+        assert!(ask.contains(want), "missing {want:?}:\n{ask}");
+    }
+    assert!(w.app.hit.ask_report.width > 0 && w.app.hit.ask_index.width > 0 && w.app.hit.ask_cancel.width > 0);
+    w.app.modal = None;
+    w.press('?');
+    let help = render(&mut w.app, 130, 44);
+    assert!(
+        help.contains("index the session") && help.contains("alias report"),
+        "{help}"
+    );
+}
+
 // -- dialogs ---------------------------------------------------------------------------------------------
 
 #[test]
