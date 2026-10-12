@@ -7,7 +7,7 @@ itself (it is built in), so nothing here has to be installed next to the binary;
 the two packages in `requirements.txt` have to be installed for the Python named by the
 `python` setting.
 
-It started as a copy of `chroma_memory.py` at `Kuntypilled/ttrpg-transcriber@98aa387` and
+It started as a copy of `chroma_memory.py` at `Kuntypilled/ttrpg-transcriber@3f6dcca` and
 differs in one way: it no longer imports `campaign.py`. It knows nothing about
 campaigns. The caller passes the database folder (`--db`) and, for `info`, the player
 characters (`--pcs`). `ingest` takes the chunk file as an argument; `--campaign` and

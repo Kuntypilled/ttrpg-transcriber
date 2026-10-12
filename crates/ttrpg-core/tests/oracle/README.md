@@ -3,7 +3,8 @@
 The original program's scripts, kept for the tests and for nothing else. The program
 does not run, read or need any of them.
 
-They are copies of files from `Kuntypilled/ttrpg-transcriber` at commit `98aa387`
+They are copies of files from `Kuntypilled/ttrpg-transcriber` at commit `3f6dcca` (`98aa387` before the history was rewritten,
+see `docs/history-rewrite.md`)
 (2026-10-11). `campaign.py` and `transcript_to_chunks.py` are byte-identical to that
 commit except for three kinds of change: `transcribe.sh` carries the stock-phrase rule listed
 below, and the names that the author's real campaign had left in comments, messages and one

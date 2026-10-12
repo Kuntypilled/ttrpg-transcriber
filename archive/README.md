@@ -5,7 +5,8 @@
 > program in the root of this repository (see the README there), which does everything
 > below without them. Nothing in the current program runs these files. They still work
 > from here, because each finds its siblings from its own location, and they are kept for
-> reference. The last commit before they moved is `98aa387`.
+> reference. The last commit before they moved is `3f6dcca`
+> (`98aa387` before the history was rewritten; see [`docs/history-rewrite.md`](../docs/history-rewrite.md)).
 >
 > What replaced each file, and what changed on purpose, is in
 > [`docs/differences.md`](../docs/differences.md). In short:

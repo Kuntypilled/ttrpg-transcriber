@@ -560,6 +560,7 @@ goes to the program, so `scripts/demo.sh --keep info emberfall/main` and
 | `python/` | The Chroma helper and its requirements. See `python/README.md` |
 | `examples/` | Invented example config, alias file and desktop entry |
 | `docs/differences.md` | How this version differs from the earlier GTK, bash and Python one |
+| `docs/history-rewrite.md` | Why the git history was rewritten in October 2026 and what changed |
 | `archive/` | The earlier version's files, kept for reference. Nothing here runs them |
 | `scripts/demo.sh` | The demo above |
 
