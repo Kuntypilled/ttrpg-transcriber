@@ -1,9 +1,25 @@
 # Session Transcriber
 
-> **Archived.** The GTK GUI in this repository is replaced by a terminal program written
-> in Rust: <https://github.com/Kuntypilled/ttrpg_transcriber_tui>. The scripts here still
-> work as described below. See [ARCHIVED.md](ARCHIVED.md) for what moved where and what
-> carries over.
+> **Archived.** This folder holds the earlier version of the tool: a GTK3 front end, a
+> bash transcription script and three Python scripts. It was replaced by the terminal
+> program in the root of this repository (see the README there), which does everything
+> below without them. Nothing in the current program runs these files. They still work
+> from here, because each finds its siblings from its own location, and they are kept for
+> reference. The last commit before they moved is `98aa387`.
+>
+> What replaced each file, and what changed on purpose, is in
+> [`docs/differences.md`](../docs/differences.md). In short:
+>
+> | Here | Now |
+> |---|---|
+> | `transcribe_gui.py`, `launch_transcriber.sh` | `ttrpg-tui` (`crates/ttrpg-tui`) |
+> | `transcribe.sh` | `crates/ttrpg-core/src/transcribe.rs`, `pipeline.rs` |
+> | `transcript_to_chunks.py` | `chunker.rs`, `alias_report.rs` |
+> | `campaign.py` | `campaign.rs`, `settings.rs`, `aliases.rs`, `report.rs` |
+> | `chroma_memory.py`, `requirements.txt` | `python/` (no longer imports `campaign.py`) |
+> | `config.example.json`, `canon_aliases.example.json` | `examples/` |
+> | `ttrpg-transcriber.desktop.example` | `examples/ttrpg-tui.desktop.example` |
+> | `layout-*.sh` | unrelated to the pipeline; kept here |
 
 A four-stage pipeline that turns a Craig Discord multitrack recording of a tabletop RPG
 session into a searchable, canon-corrected transcript and a per-campaign vector store.
