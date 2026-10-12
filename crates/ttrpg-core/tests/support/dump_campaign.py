@@ -1,7 +1,7 @@
-"""Dump what legacy/campaign.py computes for one campaign, as JSON.
+"""Dump what tests/oracle/campaign.py computes for one campaign, as JSON.
 
 Used only by the parity tests. Usage:
-    python3 -I -B dump_campaign.py <legacy dir> <campaign id> [session ...]
+    python3 -I -B dump_campaign.py <oracle dir> <campaign id> [session ...]
 """
 import json
 import sys

@@ -1,4 +1,4 @@
-//! `append_object_entries` against the original in `legacy/campaign.py`: the same
+//! `append_object_entries` against the original in `tests/oracle/campaign.py`: the same
 //! file and the same entries must come out byte for byte the same. The files here
 //! use the original's own layout (four-space keys, one-line entries), because the
 //! Rust version follows the file's layout and the original always writes four spaces;
@@ -48,7 +48,7 @@ fn original(py: &Path, text: &str, key: &str, new: &Map<String, Value>) -> Resul
     let out = Command::new(py)
         .args(["-I", "-B"])
         .arg(manifest().join("tests/support/append_entries.py"))
-        .arg(manifest().join("../../legacy").canonicalize().unwrap())
+        .arg(manifest().join("tests/oracle").canonicalize().unwrap())
         .arg(&file)
         .arg(key)
         .arg(Value::Object(new.clone()).to_string())

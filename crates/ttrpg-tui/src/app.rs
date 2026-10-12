@@ -19,8 +19,7 @@ use ttrpg_core::audio::{Speaker, list_audio_files, natural_cmp, resolve_speaker}
 use ttrpg_core::preflight::{PreflightReport, preflight};
 use ttrpg_core::{
     Campaign, IndexKind, IndexReport, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, StockRule, Tracker,
-    execute, execute_index, has_saved_output, legacy, list_campaigns, plan_index, plan_job, plan_reprocess,
-    save_speakers,
+    execute, execute_index, has_saved_output, list_campaigns, plan_index, plan_job, plan_reprocess, save_speakers,
 };
 
 use crate::picker::{FilePicker, Outcome};
@@ -988,8 +987,7 @@ impl App {
         let (Some(camp), Some(session)) = (self.campaign(), self.session) else {
             return;
         };
-        let plan = legacy::locate(&self.settings).and_then(|l| plan_index(&self.settings, camp, session, kind, &l));
-        let plan = match plan {
+        let plan = match plan_index(&self.settings, camp, session, kind) {
             Ok(p) => p,
             Err(e) => {
                 self.set_status(StatusKind::Error, e.0);

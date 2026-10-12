@@ -8,7 +8,7 @@ What was found to differ between that document and the code is in
 
 ## Status
 
-Milestones 1 to 5 of 7 (PORTING.md section 11).
+Milestones 1 to 6 of 7 (PORTING.md section 11).
 
 What you can do now:
 
@@ -45,13 +45,17 @@ What you can do now:
 - Retry: with nothing chosen, the audio already in the session folder is the job,
   and tracks that already succeeded are skipped.
 - The plain commands `doctor`, `list`, `paths`, `whisper-device` (same output as
-  `campaign.py`) and `check` (are the tools installed? creates nothing).
+  `campaign.py`) and `check` (are the tools installed? creates nothing), and two that
+  look into a campaign's memory store: `ttrpg-tui info CAMPAIGN` (where it is, how many
+  chunks, which sessions) and `ttrpg-tui query CAMPAIGN "what the villain said"` with
+  `--from SESSION`, `--char NAME`, `--contains TEXT` and `-k COUNT`.
 
 Transcribing, the post-processing, the chunker and the alias report are all Rust now,
 each checked byte for byte against the scripts they replaced. ChromaDB itself stays
-Python for good: Index needs the Python that has ChromaDB installed (the `python`
-setting). Not done yet: milestone 6 (cleanup: the Chroma helper made self-contained
-and the `legacy/` folder removed) and milestone 7 (the cutover).
+Python for good: Index, `info` and `query` need the Python that has ChromaDB installed
+(the `python` setting). The small Python helper that talks to it is built into the
+program (`python/chroma_memory.py`) and no longer needs any of the original scripts.
+Not done yet: milestone 7, the cutover in the original repository.
 
 ## Try it without whisper or real recordings
 
@@ -63,9 +67,11 @@ builds a throwaway world (an invented campaign, six short "Craig" tracks in a
 Downloads folder, one from a speaker the campaign does not know, and a stand-in
 `whisper-cli` that takes a few seconds per track) and opens the app on it. Nothing
 outside the demo folder is touched (the vector store is pretended so ChromaDB is not
-needed). Follow the hints it prints: `f`, `a`, `c`,
-`s`, Enter; afterwards `r` resolves the unknown guest. Variations: `DEMO_FAIL=1` adds a track that fails, `DEMO_DELAY=0` makes
-runs instant, `--keep` reuses last time's world so you can see skipped tracks.
+needed). Follow the hints it prints: `f`, `a`, `c`, `s`, Enter; afterwards `r` resolves
+the unknown guest. Variations: `DEMO_FAIL=1` adds a track that fails, `DEMO_DELAY=0`
+makes runs instant, `--keep` reuses last time's world so you can see skipped tracks.
+Anything after `--keep` goes to the program, so `scripts/demo.sh --keep info emberfall/main`
+and `scripts/demo.sh --keep query emberfall/main "the ledger"` work on the demo world.
 
 ## Install and run
 
@@ -81,8 +87,10 @@ cargo run --release -p ttrpg-tui -- doctor    # where every folder resolved from
 ```
 
 A terminal of at least 100 x 28 is comfortable. `cargo install --path crates/ttrpg-tui`
-works too, as long as this folder stays where it is: Index finds `legacy/chroma_memory.py`
-here, or wherever `legacy_dir` points.
+works anywhere: the program carries everything it runs except `ffmpeg`, `whisper-cli`
+and the Python that has ChromaDB. For Index, `info` and `query` install the packages
+once: `python3 -m pip install chromadb sentence-transformers` (or into a venv, and point
+the `python` setting at it). `ttrpg-tui check` says whether the Python can see them.
 
 ### Configuration
 
@@ -95,7 +103,6 @@ instructions. These settings are new:
 |---|---|---|---|
 | whisper command | `GM_WHISPER_BIN` | `whisper_bin` | `whisper-cli` on PATH |
 | model file | `GM_WHISPER_MODEL` | `whisper_model` | `~/.local/share/whisper.cpp/models/ggml-large-v3-turbo.bin` |
-| where the Chroma helper lives (for Index) | `GM_LEGACY_DIR` | `legacy_dir` | the `legacy/` folder next to the program, or in the checkout it was built from |
 | Python that has ChromaDB (for Index) | `GM_PYTHON` | `python` | `python3` on PATH |
 | phrases whisper makes up on silence | `GM_STOCK_PHRASES` (comma-separated, or `off`) | `stock_phrases` (a list, or `[]` for off) | `thank you`, `we'll be right back` |
 | how long such a line must last to be dropped | `GM_STOCK_MIN_SECONDS` | `stock_min_seconds` | `20` |
@@ -137,7 +144,8 @@ the pointer.
 |---|---|
 | `crates/ttrpg-core` | Library, no UI. Config, campaigns, paths, speaker resolution, the alias-file edit, the transcription run and its post-processing, the chunker, the alias report. |
 | `crates/ttrpg-tui` | The `ttrpg-tui` program: commands, and the app as a library so tests can drive it. |
-| `legacy/` | Copies of the original scripts, kept until milestone 6: they produced the golden test files, and `chroma_memory.py` still runs Index. See `legacy/README.md`. |
+| `python/` | The Chroma helper (`chroma_memory.py`, built into the program) and its requirements. See `python/README.md`. |
+| `crates/ttrpg-core/tests/oracle/` | Copies of the original scripts, for the tests only: they produced the golden files and are the live oracle for the config and alias-file parity tests. The program never runs them. See its `README.md`. |
 | `examples/` | Invented example config and alias file. |
 | `scripts/demo.sh` | The demo above. |
 
@@ -153,7 +161,7 @@ Four kinds of test:
   report and a whole run (`ffmpeg`, a stub `whisper-cli`, five tone files) are
   compared byte for byte with what the original scripts wrote on the same input. The
   `generate.sh` next to each set of files says how it was made.
-- **Parity**: the same commands through `legacy/campaign.py` and the Rust code must
+- **Parity**: the same commands through `tests/oracle/campaign.py` and the Rust code must
   print the same thing, and the alias-file edit must produce the same bytes as the
   original's `append_object_entries`.
 - **End to end**: the real Rust runner with real `ffmpeg` and a stub `whisper-cli`,
@@ -162,8 +170,10 @@ Four kinds of test:
 - **Screen**: each pane, tab and dialog is drawn into an in-memory terminal and read
   back, at many sizes.
 
-The parity tests need `python3`; the end-to-end ones need `bash` (for the stub) and
-`ffmpeg`. Without them the tests print `SKIPPED` and pass.
+The parity tests need `python3`; the end-to-end ones need `bash` (for the stub), `ffmpeg`
+and `python3` (the Chroma helper runs for real against a stand-in for `chromadb`).
+Without them the tests print `SKIPPED` and pass. Real ChromaDB and the embedding model
+are not tested here.
 
 ## Data
 

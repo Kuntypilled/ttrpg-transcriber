@@ -2,10 +2,11 @@
 //!
 //! The chunker and the alias report run in this program ([`crate::chunker`],
 //! [`crate::alias_report`]). Storing the chunks is the one Python step: the Chroma
-//! helper (`chroma_memory.py`) embeds and stores them. ChromaDB and
+//! helper (`python/chroma_memory.py`) embeds and stores them. ChromaDB and
 //! sentence-transformers have no practical Rust equivalent that reads the existing
 //! store (PORTING.md section 6), so that half stays Python for good; which Python is
-//! the `python` setting.
+//! the `python` setting. The helper is built into the program and run with
+//! `python -c`, so there is no file to find.
 //!
 //! [`plan_index`] checks everything up front. [`execute_index`] runs on its own thread
 //! and reports through the same event channel as the transcription job.
@@ -23,7 +24,40 @@ use crate::chunker;
 use crate::error::CampaignError;
 use crate::job::PipelineEvent;
 use crate::proc::run_streaming;
-use crate::settings::{Settings, Sourced};
+use crate::pyish;
+use crate::settings::Settings;
+
+/// The Chroma helper, built into the program.
+pub const CHROMA_HELPER: &str = include_str!("../../../python/chroma_memory.py");
+
+/// What to pass to Python to run the helper with `rest` as its arguments.
+pub fn helper_args(rest: &[String]) -> Vec<String> {
+    let mut args = vec!["-c".to_string(), CHROMA_HELPER.to_string()];
+    args.extend(rest.iter().cloned());
+    args
+}
+
+/// The environment the helper runs in: the process's, with Python's output unbuffered
+/// so the log shows lines as they come.
+pub fn helper_env(settings: &Settings) -> HashMap<String, String> {
+    let mut env = settings.env_vars().clone();
+    env.insert("PYTHONUNBUFFERED".into(), "1".into());
+    env.insert("PYTHONIOENCODING".into(), "utf-8".into());
+    env
+}
+
+/// Where the campaign's store is. `$TTRPG_DB` wins if it is set, as it always did for
+/// the helper (the original GUI passed no `--db`, so the helper read the variable);
+/// otherwise the campaign's own folder under the Chroma root.
+pub fn store_path(settings: &Settings, campaign: &Campaign) -> Result<String, CampaignError> {
+    match settings.env("TTRPG_DB") {
+        Some(p) => Ok(pyish::abspath(
+            &pyish::expanduser(p, settings.env_raw("HOME")),
+            &pyish::cwd(),
+        )),
+        None => campaign.db_path(settings),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IndexKind {
@@ -39,7 +73,6 @@ pub struct IndexPlan {
     pub slug: String,
     pub session: i64,
     pub program: String,
-    pub scripts_dir: String,
     pub env: HashMap<String, String>,
     pub transcript_md: String,
     pub chunks_path: String,
@@ -53,7 +86,6 @@ pub fn plan_index(
     campaign: &Campaign,
     session: i64,
     kind: IndexKind,
-    scripts: &Sourced,
 ) -> Result<IndexPlan, CampaignError> {
     if session <= 0 {
         return Err(CampaignError::new("The session number must be 1 or higher."));
@@ -64,35 +96,19 @@ pub fn plan_index(
             "There is no transcript for session {session} yet: {transcript_md} does not exist."
         )));
     }
-    let needed: &[&str] = match kind {
-        IndexKind::Index => &["chroma_memory.py"],
-        IndexKind::Report => &[],
-    };
-    for script in needed {
-        if !Path::new(&scripts.value).join(script).is_file() {
-            return Err(CampaignError::new(format!(
-                "{script} is not in {} (from {}).",
-                scripts.value, scripts.source
-            )));
-        }
-    }
-    let mut env = settings.env_vars().clone();
-    env.insert("PYTHONUNBUFFERED".into(), "1".into());
-    env.insert("PYTHONIOENCODING".into(), "utf-8".into());
     Ok(IndexPlan {
         kind,
         slug: campaign.slug.clone(),
         session,
         program: settings.effective_python()?,
-        scripts_dir: scripts.value.clone(),
-        env,
+        env: helper_env(settings),
         transcript_md,
         chunks_path: campaign.chunks_path(settings, session)?,
         report_path: Path::new(&campaign.session_dir(settings, session)?)
             .join("alias_candidates.md")
             .to_string_lossy()
             .into_owned(),
-        db_path: campaign.db_path(settings)?,
+        db_path: store_path(settings, campaign)?,
     })
 }
 
@@ -196,15 +212,15 @@ fn hint_for(output: &[String], plan: &IndexPlan) -> Option<String> {
         || text.contains("No module named \"chromadb\"")
     {
         return Some(format!(
-            "ChromaDB is not installed for {}. Install it with: {} -m pip install -r {}/requirements.txt \
+            "ChromaDB is not installed for {}. Install it with: {} -m pip install chromadb sentence-transformers \
              (or set \"python\" in the config file to a Python that has it).",
-            plan.program, plan.program, plan.scripts_dir
+            plan.program, plan.program
         ));
     }
     if text.contains("No module named") {
         return Some(format!(
-            "A Python module is missing for {}. See {}/requirements.txt.",
-            plan.program, plan.scripts_dir
+            "A Python module is missing for {}. The Chroma helper needs chromadb and sentence-transformers.",
+            plan.program
         ));
     }
     None
@@ -342,6 +358,14 @@ fn run(plan: &IndexPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool, report
             stage("Chunking the transcript...", 0.1);
             let run = chunker::chunk_transcript(&campaign, &raw, plan.session, &crate::timefmt::today_local());
             log(run.summary(plan.session));
+            if run.uncovered_lines > 0 {
+                log(format!(
+                    "WARNING: {} line(s) of the transcript are not part of any speaker entry and were not indexed \
+                     (text above the first speaker line, or a line that starts like a header but is not \
+                     **[hh:mm:ss] Name:**).",
+                    run.uncovered_lines
+                ));
+            }
             (report.chunks, report.utterances) = (Some(run.chunks), Some(run.utterances));
             if run.chunks == 0 {
                 // Written anyway, as the original did, so the file is not stale.
@@ -367,18 +391,12 @@ fn run(plan: &IndexPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool, report
                 "Embedding and storing (the first run loads the model, which takes a while)...",
                 0.5,
             );
-            let script = Path::new(&plan.scripts_dir)
-                .join("chroma_memory.py")
-                .to_string_lossy()
-                .into_owned();
-            let ingest = vec![
-                script,
+            let ingest = helper_args(&[
                 "ingest".into(),
-                "--campaign".into(),
-                plan.slug.clone(),
-                "--session".into(),
-                plan.session.to_string(),
-            ];
+                "--db".into(),
+                plan.db_path.clone(),
+                plan.chunks_path.clone(),
+            ]);
             let ok = step(plan, tx, cancel, report, ingest, "Storing in ChromaDB", |line, r| {
                 if let Some((n, held)) = parse_upsert_summary(line) {
                     (r.upserted, r.collection) = (Some(n), Some(held));
@@ -395,6 +413,21 @@ fn run(plan: &IndexPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool, report
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_built_in_helper_is_plain_ascii_so_it_survives_any_locale_on_the_command_line() {
+        assert!(CHROMA_HELPER.is_ascii());
+        assert!(CHROMA_HELPER.contains("def main(argv=None):"));
+        assert!(
+            !CHROMA_HELPER.contains("import campaign"),
+            "it must not need the original scripts"
+        );
+        let args = helper_args(&["info".into(), "--db".into(), "/x".into()]);
+        assert_eq!(
+            (args[0].as_str(), args[2].as_str(), args[4].as_str()),
+            ("-c", "info", "/x")
+        );
+    }
 
     #[test]
     fn the_helpers_summary_lines_are_read() {

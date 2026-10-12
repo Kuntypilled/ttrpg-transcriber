@@ -6,12 +6,15 @@
 #   - a Downloads folder holding six short "Craig" tracks, one from a speaker the
 #     campaign does not know, so you can see the warning
 #   - a stand-in whisper-cli that waits a few seconds per track and writes canned dialogue
-#   - a stand-in for the Python that has ChromaDB, so Index and the alias report can be tried
+#   - a stand-in for the chromadb package (the real Chroma helper runs against it), so Index,
+#     the alias report, `ttrpg-tui info` and `ttrpg-tui query` can be tried without ChromaDB
 #
 # Nothing outside the demo folder is touched and your real config is ignored.
 #
 #   scripts/demo.sh              fresh demo world, then the TUI
 #   scripts/demo.sh --keep       reuse the world from last time (to see skipped tracks, retries)
+#   scripts/demo.sh --keep info emberfall/main     any other arguments go to the program, so the
+#                                                  plain commands (info, query, check, doctor) can be tried
 #   DEMO_DELAY=0 scripts/demo.sh   no pretend work, runs finish at once
 #   DEMO_FAIL=1 scripts/demo.sh    add a seventh track whose transcription fails
 #   DEMO_DIR=/some/path scripts/demo.sh
@@ -22,7 +25,10 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 demo="${DEMO_DIR:-${TMPDIR:-/tmp}/ttrpg-tui-demo}"
 keep=false
-[[ "${1:-}" == "--keep" ]] && keep=true
+if [[ "${1:-}" == "--keep" ]]; then
+    keep=true
+    shift
+fi
 
 missing=()
 for tool in bash python3 ffmpeg; do
@@ -47,8 +53,7 @@ else
     touch "$demo/.ttrpg-tui-demo"
 
     cp "$here/scripts/demo/fake-whisper-cli" "$demo/bin/whisper-cli"
-    cp "$here/scripts/demo/fake-python" "$demo/bin/python"
-    chmod +x "$demo/bin/whisper-cli" "$demo/bin/python"
+    chmod +x "$demo/bin/whisper-cli"
     echo "not a real model" >"$demo/model.bin"
 
     camps="$demo/vaults/emberfall/0.2_campaigns"
@@ -108,11 +113,13 @@ export GM_CHROMA_ROOT="$demo/chroma"
 export GM_WORK_ROOT="$demo/work"
 export GM_WHISPER_BIN="$demo/bin/whisper-cli"
 export GM_WHISPER_MODEL="$demo/model.bin"
-export GM_PYTHON="$demo/bin/python"
-export GM_LEGACY_DIR="$here/legacy"
+export GM_PYTHON="python3"
+export PYTHONPATH="$here/crates/ttrpg-core/tests/fixtures/fake_chroma"
 export DEMO_DELAY="${DEMO_DELAY:-2.5}"
+export FAKE_CHROMA_SLEEP="$DEMO_DELAY"
 unset GM_VAULT VAULT GM_WHISPER_DEVICE
 
+if (($# == 0)); then
 cat <<EOF
 
 Demo world: $demo
@@ -120,7 +127,9 @@ Try: f (choose files, they are in Downloads), a (all), c (done), s (start), Ente
      Then look at the Log and Transcript tabs. ? lists every key.
      r resolves the unknown guest. With session 1 selected (n, 1, Enter), i indexes its
      transcript and a writes the alias report (the vector store is pretended; the rest is real).
+     Afterwards: scripts/demo.sh --keep info emberfall/main, or query emberfall/main "the ledger".
      Lantern Row has no review_only list, so i asks about the report first there.
 
 EOF
-exec "$bin"
+fi
+exec "$bin" "$@"

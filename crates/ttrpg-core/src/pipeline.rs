@@ -113,7 +113,7 @@ fn should_filter(text: &str, words: &[String]) -> bool {
     })
 }
 
-/// The script's `is_stock_segment` (see `legacy/README.md`).
+/// The script's `is_stock_segment` (see `ERRATA.md`).
 fn is_stock(row: &Row, rule: &StockRule) -> bool {
     if !rule.enabled() || row.end - row.start < i64::from(rule.min_seconds) * 1000 {
         return false;

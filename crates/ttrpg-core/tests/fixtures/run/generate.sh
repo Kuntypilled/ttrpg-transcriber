@@ -25,7 +25,7 @@ done
 env -i PATH="$PATH" HOME="$work/home" LC_ALL=C \
     GM_VAULT="$work/vault" GM_AUDIO_ROOT="$work/audio" GM_WORK_ROOT="$work/work" \
     GM_CHROMA_ROOT="$work/chroma" GM_TRANSCRIBER_CONFIG="$work/none.json" \
-    bash "$repo/legacy/transcribe.sh" --campaign demo --session 7 \
+    bash "$repo/crates/ttrpg-core/tests/oracle/transcribe.sh" --campaign demo --session 7 \
         -w "$here/stub-whisper" -m "$work/model.bin" \
         >"$work/stdout.txt"
 

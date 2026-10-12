@@ -1,7 +1,7 @@
-"""Run legacy/campaign.py's append_object_entries on a file, in place.
+"""Run tests/oracle/campaign.py's append_object_entries on a file, in place.
 
 Used only by the parity tests. Usage:
-    python3 -I -B append_entries.py <legacy dir> <file> <key> '<entries as a JSON object>'
+    python3 -I -B append_entries.py <oracle dir> <file> <key> '<entries as a JSON object>'
 Prints {"added": [...]} or {"error": "..."} as JSON.
 """
 import json

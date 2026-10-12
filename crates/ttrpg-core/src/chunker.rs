@@ -65,6 +65,32 @@ pub fn entries(raw: &str) -> Vec<(String, String, String, String, String)> {
     out
 }
 
+/// Non-blank lines that belong to no entry: text before the first speaker line, or a line
+/// that starts like a header but is not one (a mistyped time, a missing colon). The original
+/// dropped these without a word (PORTING.md section 10, item 6); the Index job reports the count.
+pub fn uncovered_lines(raw: &str) -> usize {
+    let mut covered_to = 0;
+    let mut pos = 0;
+    let mut count = 0;
+    let lines = |text: &str| text.lines().filter(|l| !l.trim().is_empty()).count();
+    while let Some(rel) = raw[pos..].find("**[") {
+        let at = pos + rel;
+        match header_at(raw, at) {
+            Some((_, _, body_start)) => {
+                count += lines(&raw[covered_to..at]);
+                let body_end = raw[body_start..].find("\n**[").map_or(raw.len(), |i| body_start + i);
+                covered_to = body_end;
+                pos = body_end.max(at + 1);
+            }
+            None => pos = at + 1,
+        }
+        if pos >= raw.len() {
+            break;
+        }
+    }
+    count + lines(&raw[covered_to.min(raw.len())..])
+}
+
 type Hms = (String, String, String);
 
 /// Try to read an entry header at `at` (which holds `**[`): the time, the label, and
@@ -261,6 +287,8 @@ pub struct ChunkRun {
     pub chunks: usize,
     pub utterances: usize,
     pub alias_rules: usize,
+    /// Lines of the transcript that belong to no entry and so were not indexed.
+    pub uncovered_lines: usize,
 }
 
 impl ChunkRun {
@@ -310,6 +338,7 @@ pub fn chunk_transcript(campaign: &Campaign, raw: &str, session: i64, date: &str
         chunks: chunks.len(),
         utterances: utts.len(),
         alias_rules: subs.len(),
+        uncovered_lines: uncovered_lines(&raw),
     }
 }
 
@@ -334,6 +363,24 @@ mod tests {
                 ("00:01:10 Mara_Quill".to_string(), "Hello.\n\n".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn lines_outside_any_entry_are_counted() {
+        let good = "**[00:00:04] GM:**  \nFirst.\n\n**[00:01:10] Mara_Quill:**  \nHello.\n\n";
+        assert_eq!(uncovered_lines(good), 0, "a clean transcript loses nothing");
+        assert_eq!(uncovered_lines(""), 0);
+        // Notes above the first speaker line.
+        assert_eq!(
+            uncovered_lines(&format!("# Session 3\n\nrecorded on a Friday\n\n{good}")),
+            2
+        );
+        // A header with a typo ends the previous entry; it and its text are skipped.
+        let broken = "**[00:00:04] GM:**  \nFirst.\n\n**[0:01:10] Mara_Quill:**  \nLost.\nAlso lost.\n\n**[00:02:00] Tomas_Ink:**  \nKept.\n";
+        assert_eq!(uncovered_lines(broken), 3);
+        assert_eq!(entries(broken).len(), 2);
+        // Nothing but prose.
+        assert_eq!(uncovered_lines("just notes\nno speakers\n"), 2);
     }
 
     #[test]

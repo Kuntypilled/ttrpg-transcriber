@@ -100,7 +100,7 @@ priority.
 | The session number is offered: the one after the latest session with a transcript, or the latest itself if it has none | The GUI left the field empty |
 | Output from the script is stripped of control characters before it is shown | whisper-cli and ffmpeg write escape codes that would otherwise recolour or move the screen |
 | `q` while a job runs warns first; a second `q` cancels the job and then quits | Quitting must not leave whisper-cli running |
-| Tool locations are settings (`whisper_bin`, `whisper_model`, `legacy_dir`) | `transcribe.sh` took them as flags the GUI never passed |
+| Tool locations are settings (`whisper_bin`, `whisper_model`; `legacy_dir` too, until milestone 6 removed it) | `transcribe.sh` took them as flags the GUI never passed |
 
 ### Milestone 3: unknown speakers
 
@@ -154,6 +154,26 @@ one can be finished by the other. The differences:
 | Failing to start `ffmpeg` or `whisper-cli` is logged with the system's reason | The original printed the shell's "No such file" into the CSV log only |
 | The chunk file and the alias report are written by the program; their dates, ordering and rounding were checked against Python, including `difflib.SequenceMatcher` (reimplemented, since no crate matches its results) | Python is no longer needed for either |
 | Tools needed to transcribe: `ffmpeg`, `whisper-cli` and the model. `bash`, `jq` and `python3` are not | Nothing runs a script any more. Index still needs the Python with ChromaDB |
+
+### Milestone 6: cleanup
+
+| Difference | Why |
+|---|---|
+| `chroma_memory.py` no longer imports `campaign.py` (PORTING.md 6.1, option 2). It takes `--db` and, for `info`, `--pcs`; `ingest` takes the chunk file as an argument. `--campaign` and `--session` are gone from it | The program already knows every path. One source of truth for them |
+| The helper is built into the program and run with `python -c`; there is no file to find | `cargo install` works anywhere. The `legacy_dir` setting and `GM_LEGACY_DIR` are gone (a `legacy_dir` left in a config file is ignored) |
+| `$TTRPG_DB` still moves the store, but the program reads it and passes `--db` | The original GUI passed no `--db`, so the helper read the variable. Same behaviour, now in one place |
+| `ttrpg-tui info CAMPAIGN` and `ttrpg-tui query CAMPAIGN "text"` | PORTING.md 7.4: the GUI never exposed them, and with the campaign import gone they would otherwise need the paths worked out by hand |
+| `check` and the Tools dialog probe the `python` setting for `chromadb` and `sentence-transformers` (optional item "ChromaDB for Index"); they gave only "python found" before | A missing package is the usual first-run failure; it can now be seen before pressing `i` |
+| The original scripts moved from `legacy/` to `crates/ttrpg-core/tests/oracle/` and are used only by tests | Nothing at run time reads them. The golden files are checked in; the scripts stay so the goldens can be remade, and `campaign.py` stays as the live oracle for the config, path and alias-file parity tests |
+| `scripts/demo.sh` runs the real helper against the same stand-in `chromadb` the tests use | One stand-in instead of a second one written in shell |
+| Index logs a warning with a count when lines of the transcript belong to no speaker entry (notes above the first speaker line, a header with a typo) | The chunker dropped them without a word (PORTING.md section 10, item 6). The count does not change what is indexed |
+
+Known limits of milestone 6: real ChromaDB and the embedding model are not exercised by
+any test (neither is installed in the test environment). The helper's own logic is, against
+a stand-in that records what it was asked to do; whether a real store accepts those calls
+depends on the installed `chromadb`, and the `configuration={"hnsw": ...}` keyword needs a
+recent release (see `python/requirements.txt`). Run `ttrpg-tui info` on a real campaign
+once to confirm.
 
 Known limits of milestone 5:
 

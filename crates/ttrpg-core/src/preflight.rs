@@ -7,7 +7,6 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use crate::legacy;
 use crate::settings::Settings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +100,70 @@ fn tool(settings: &Settings, name: &str, command: &str, hint: String) -> DepItem
     }
 }
 
+/// Whether `python` can import the two packages the Chroma helper needs. Looking up a
+/// module's location does not import it, so this is quick; it still gives up after 5 s.
+fn python_has_chroma(settings: &Settings, python: &str) -> bool {
+    python_has_chroma_within(settings, python, std::time::Duration::from_secs(5))
+}
+
+fn python_has_chroma_within(settings: &Settings, python: &str, limit: std::time::Duration) -> bool {
+    const PROBE: &str = "import importlib.util as u, sys; \
+        sys.exit(0 if all(u.find_spec(m) for m in ('chromadb', 'sentence_transformers')) else 1)";
+    let Ok(mut child) = std::process::Command::new(python)
+        .args(["-c", PROBE])
+        .env_clear()
+        .envs(settings.env_vars())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + limit;
+    while std::time::Instant::now() < deadline {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Err(_) => break,
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    false
+}
+
+fn chroma_item(settings: &Settings) -> DepItem {
+    let name = "ChromaDB for Index".to_string();
+    let missing = |lines: Vec<String>| DepItem {
+        name: name.clone(),
+        required: false,
+        status: DepStatus::Missing(lines),
+    };
+    let py = match settings.effective_python() {
+        Ok(py) => py,
+        Err(e) => return missing(vec![e.to_string()]),
+    };
+    let Some(path) = which(settings, &py) else {
+        return missing(vec![format!(
+            "{py} was not found. Index needs a Python with ChromaDB; set \"python\" in the config file."
+        )]);
+    };
+    if python_has_chroma(settings, &path) {
+        DepItem {
+            name,
+            required: false,
+            status: DepStatus::Found(format!("{path} (chromadb and sentence-transformers found)")),
+        }
+    } else {
+        missing(vec![
+            format!("{path} cannot import chromadb and sentence-transformers. Only Index needs them. Install with:"),
+            format!("  {path} -m pip install chromadb sentence-transformers"),
+            "or set \"python\" in the config file to a Python that has them.".to_string(),
+        ])
+    }
+}
+
 pub fn preflight(settings: &Settings) -> PreflightReport {
     let mut items = vec![tool(
         settings,
@@ -163,30 +226,7 @@ pub fn preflight(settings: &Settings) -> PreflightReport {
         }),
     }
 
-    let status = match legacy::locate(settings) {
-        Ok(found) => DepStatus::Found(format!("{} ({})", found.value, found.source)),
-        Err(e) => DepStatus::Missing(vec![e.to_string()]),
-    };
-    items.push(DepItem {
-        name: "Index helper".into(),
-        required: false,
-        status,
-    });
-
-    let status = match settings.effective_python() {
-        Ok(py) => match which(settings, &py) {
-            Some(path) => DepStatus::Found(path),
-            None => DepStatus::Missing(vec![format!(
-                "{py} was not found. It runs Index and the alias report; ChromaDB must be installed for it."
-            )]),
-        },
-        Err(e) => DepStatus::Missing(vec![e.to_string()]),
-    };
-    items.push(DepItem {
-        name: "python for Index".into(),
-        required: false,
-        status,
-    });
+    items.push(chroma_item(settings));
 
     let status = match which(settings, "xdg-open") {
         Some(path) => DepStatus::Found(path),
@@ -241,6 +281,57 @@ mod tests {
         let p = bin.join(name);
         fs::write(&p, "#!/bin/sh\n").unwrap();
         fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn install_with(dir: &Path, name: &str, body: &str) {
+        let bin = dir.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let p = bin.join(name);
+        fs::write(&p, body).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn chromadb_is_looked_for_in_the_python_that_is_set() {
+        let tmp = TempDir::new().unwrap();
+        install_with(tmp.path(), "py-with", "#!/bin/sh\n[ \"$1\" = -c ] && exit 0\nexit 9\n");
+        install_with(tmp.path(), "py-without", "#!/bin/sh\nexit 1\n");
+        let item = |py: &str| chroma_item(&settings_with_path(tmp.path(), &[("GM_PYTHON", py)]));
+
+        let found = item("py-with");
+        assert!(!found.required, "only Index needs it");
+        assert!(matches!(&found.status, DepStatus::Found(w) if w.contains("chromadb and sentence-transformers found")));
+
+        let DepStatus::Missing(lines) = item("py-without").status else {
+            panic!("expected missing")
+        };
+        let text = lines.join("\n");
+        assert!(text.contains("-m pip install chromadb sentence-transformers"), "{text}");
+        assert!(text.contains("\"python\""), "{text}");
+
+        let DepStatus::Missing(lines) = item("no-such-python").status else {
+            panic!("expected missing")
+        };
+        assert!(lines[0].contains("no-such-python was not found"), "{lines:?}");
+    }
+
+    #[test]
+    fn a_python_that_hangs_does_not_hang_the_check() {
+        let tmp = TempDir::new().unwrap();
+        install_with(tmp.path(), "py-hang", "#!/bin/sh\nPATH=/usr/bin:/bin exec sleep 60\n");
+        let s = settings_with_path(tmp.path(), &[("GM_PYTHON", "py-hang")]);
+        let py = which(&s, "py-hang").unwrap();
+        let started = std::time::Instant::now();
+        assert!(!python_has_chroma_within(
+            &s,
+            &py,
+            std::time::Duration::from_millis(300)
+        ));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

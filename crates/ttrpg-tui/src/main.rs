@@ -2,7 +2,8 @@
 //!
 //! With no subcommand it opens the TUI. `doctor`, `list`, `paths` and
 //! `whisper-device` are the plain-text commands of the original `campaign.py`;
-//! `check` reports whether the tools the pipeline needs are installed.
+//! `check` reports whether the tools the pipeline needs are installed; `info` and
+//! `query` look into a campaign's memory store.
 
 use std::io::{IsTerminal, stdout};
 use std::process::ExitCode;
@@ -12,9 +13,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use ratatui::crossterm::execute;
-use ttrpg_core::Settings;
 use ttrpg_core::preflight::{preflight, render};
 use ttrpg_core::report::{doctor, list_output, paths_output, whisper_device_output};
+use ttrpg_core::{MemoryCommand, Settings, run_memory_command};
 use ttrpg_tui::app::App;
 use ttrpg_tui::{log, ui};
 
@@ -43,8 +44,32 @@ enum Command {
         #[arg(long, allow_hyphen_values = true)]
         session: Option<i64>,
     },
-    /// Are whisper-cli, ffmpeg, jq, the model and the scripts present? Creates nothing.
+    /// Are ffmpeg, whisper-cli and the model present (and, for Index, ChromaDB)? Creates nothing.
     Check,
+    /// Where a campaign's memory store is and what is in it
+    Info {
+        /// Campaign id: <world>/<campaign> with a vaults root, else the folder name
+        campaign: String,
+    },
+    /// Search a campaign's memory store (needs the Python that has ChromaDB)
+    Query {
+        /// Campaign id: <world>/<campaign> with a vaults root, else the folder name
+        campaign: String,
+        /// What to look for, in your own words
+        text: String,
+        /// Only sessions from this one on
+        #[arg(long = "from", value_name = "SESSION")]
+        session_from: Option<i64>,
+        /// Only passages with this character in them
+        #[arg(long = "char", value_name = "NAME")]
+        character: Option<String>,
+        /// Only passages that contain this exact text
+        #[arg(long)]
+        contains: Option<String>,
+        /// How many passages to show
+        #[arg(short, long, default_value_t = 6)]
+        k: u32,
+    },
 }
 
 fn main() -> ExitCode {
@@ -64,7 +89,8 @@ fn main() -> ExitCode {
 
 /// The plain-text commands. Exit codes follow `campaign.py`: 2 for a problem the
 /// user can fix (printed as `ERROR: ...` on stderr), and for `doctor` 1 when no
-/// campaign was found. `check` exits 1 when a required tool is missing.
+/// campaign was found. `check` exits 1 when a required tool is missing. `info` and `query`
+/// pass on the exit code of the Chroma helper.
 fn run_command(settings: &Settings, cmd: Command) -> u8 {
     let result = match cmd {
         Command::List => {
@@ -92,6 +118,25 @@ fn run_command(settings: &Settings, cmd: Command) -> u8 {
             }
             Ok(i32::from(!report.ok()))
         }
+        Command::Info { campaign } => run_memory_command(settings, &campaign, &MemoryCommand::Info),
+        Command::Query {
+            campaign,
+            text,
+            session_from,
+            character,
+            contains,
+            k,
+        } => run_memory_command(
+            settings,
+            &campaign,
+            &MemoryCommand::Query {
+                text,
+                session_from,
+                character,
+                contains,
+                k,
+            },
+        ),
     };
     match result {
         Ok(code) => code as u8,

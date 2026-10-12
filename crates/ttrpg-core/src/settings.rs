@@ -312,19 +312,14 @@ impl Settings {
         self.resolve("whisper_model", &["GM_WHISPER_MODEL"], None)
     }
 
-    /// `$GM_LEGACY_DIR` or the `legacy_dir` config key: where `transcribe.sh` lives.
-    pub fn legacy_dir(&self) -> Result<Option<Sourced>, CampaignError> {
-        self.resolve("legacy_dir", &["GM_LEGACY_DIR"], None)
-    }
-
-    /// The command to run for whisper, with the script's own default.
+    /// The command to run for whisper, defaulting to `whisper-cli` on PATH.
     pub fn effective_whisper_bin(&self) -> Result<String, CampaignError> {
         Ok(self
             .whisper_bin()?
             .map_or_else(|| "whisper-cli".to_string(), |s| s.value))
     }
 
-    /// The model file, with `transcribe.sh`'s default (which is `$HOME`-based, not XDG).
+    /// The model file, with the original script's default (which is `$HOME`-based, not XDG).
     pub fn effective_model(&self) -> Result<String, CampaignError> {
         Ok(self.whisper_model()?.map_or_else(
             || {

@@ -1,7 +1,7 @@
 //! Parity tests: the Rust port against the pinned Python original.
 //!
 //! Each test builds a throwaway vault from invented fixtures, then runs the same
-//! command through `legacy/campaign.py` and through ttrpg-core with an identical
+//! command through `tests/oracle/campaign.py` and through ttrpg-core with an identical
 //! environment, and requires identical output and exit code (PORTING.md section 9,
 //! items 5 and 6). They need `python3`; without it each test prints SKIPPED.
 //!
@@ -29,11 +29,11 @@ fn manifest() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-fn legacy_dir() -> PathBuf {
+fn oracle_dir() -> PathBuf {
     manifest()
-        .join("../../legacy")
+        .join("tests/oracle")
         .canonicalize()
-        .expect("legacy/ directory")
+        .expect("tests/oracle directory")
 }
 
 fn python() -> Option<PathBuf> {
@@ -135,10 +135,10 @@ fn normalise(s: &str) -> String {
     )
 }
 
-fn run_legacy(py: &Path, env: &HashMap<String, String>, args: &[&str]) -> Out {
+fn run_oracle(py: &Path, env: &HashMap<String, String>, args: &[&str]) -> Out {
     let o = Command::new(py)
         .args(["-I", "-B"])
-        .arg(legacy_dir().join("campaign.py"))
+        .arg(oracle_dir().join("campaign.py"))
         .args(args)
         .env_clear()
         .envs(env)
@@ -219,7 +219,7 @@ fn run_rust_raw(env: &HashMap<String, String>, args: &[&str]) -> Out {
 
 /// Run one command both ways and require identical results.
 fn assert_parity(py: &Path, env: &HashMap<String, String>, args: &[&str]) {
-    let want = run_legacy(py, env, args);
+    let want = run_oracle(py, env, args);
     let got = run_rust(env, args);
     assert_eq!(got, want, "Rust differs from Python for {args:?}");
 }
@@ -296,7 +296,7 @@ fn multi_vault_lists_in_original_order() {
     let fx = Fixture::new();
     build_multi_vault(&fx);
     let env = multi_env(&fx);
-    let want = run_legacy(&py, &env, &["list"]).stdout;
+    let want = run_oracle(&py, &env, &["list"]).stdout;
     let order: Vec<&str> = want.lines().map(|l| l.split('\t').next().unwrap()).collect();
     assert_eq!(
         order,
@@ -646,7 +646,7 @@ fn python_dump(py: &Path, env: &HashMap<String, String>, slug: &str, sessions: &
     let o = Command::new(py)
         .args(["-I", "-B"])
         .arg(manifest().join("tests/support/dump_campaign.py"))
-        .arg(legacy_dir())
+        .arg(oracle_dir())
         .arg(slug)
         .args(&sessions)
         .env_clear()

@@ -1,7 +1,7 @@
 //! The whole app, driven the way a person drives it: keys and clicks in, screen state
-//! out. The job is the real Rust runner with real `ffmpeg`, a stub `whisper-cli` and a stub
-//! stand-in for the Python that has ChromaDB. Tracks are one-second tones with invented
-//! names. Needs bash and ffmpeg; without them each test prints SKIPPED and passes.
+//! out. The job is the real Rust runner with real `ffmpeg` and a stub `whisper-cli`; Index runs
+//! the real Chroma helper against a stand-in for `chromadb`. Tracks are one-second tones with invented
+//! names. Needs bash, ffmpeg and python3; without them each test prints SKIPPED and passes.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -55,32 +55,21 @@ cat > "${of}.json" <<'J'
 J
 "#;
 
-/// Stands in for the Python that has ChromaDB. It is the only thing the program still runs
-/// Python for, so any other call fails the test.
-const FAKE_PYTHON: &str = r#"#!/usr/bin/env bash
-case "$1" in
-  *chroma_memory.py)
-    [[ -n "${FAKE_SLEEP:-}" ]] && sleep "$FAKE_SLEEP"
-    if [[ -n "${FAKE_NO_CHROMA:-}" ]]; then
-      echo "ModuleNotFoundError: No module named 'chromadb'" >&2
-      exit 1
-    fi
-    echo "Upserted 2 chunks into /fake/db. Collection now holds 5."
-    ;;
-  *) echo "unexpected python call: $*" >&2; exit 2 ;;
-esac
-"#;
+/// Index runs the real Chroma helper under `python3`, against a stand-in for the `chromadb`
+/// package, so the whole path from key press to stored chunk is the program's own.
+const FAKE_CHROMA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ttrpg-core/tests/fixtures/fake_chroma");
+const NO_CHROMA: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../ttrpg-core/tests/fixtures/no_chroma");
 
 macro_rules! require_tools {
     () => {
-        let present = ["bash", "ffmpeg"].iter().all(|t| {
+        let present = ["bash", "ffmpeg", "python3"].iter().all(|t| {
             Command::new("sh")
                 .args(["-c", &format!("command -v {t}")])
                 .output()
                 .is_ok_and(|o| o.status.success())
         });
         if !present {
-            eprintln!("SKIPPED: bash and ffmpeg are needed");
+            eprintln!("SKIPPED: bash, ffmpeg and python3 are needed");
             return;
         }
     };
@@ -132,9 +121,6 @@ impl Rig {
         fs::write(&stub, STUB).unwrap();
         fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
         fs::write(tmp.path().join("model.bin"), "x").unwrap();
-        let fake_python = tmp.path().join("bin/fake-python");
-        fs::write(&fake_python, FAKE_PYTHON).unwrap();
-        fs::set_permissions(&fake_python, fs::Permissions::from_mode(0o755)).unwrap();
         fs::create_dir_all(tmp.path().join("home/Downloads")).unwrap();
 
         let mut env = HashMap::from([
@@ -148,7 +134,8 @@ impl Rig {
             ("GM_TRANSCRIBER_CONFIG".to_string(), p("none.json")),
             ("GM_WHISPER_BIN".to_string(), stub.to_string_lossy().into_owned()),
             ("GM_WHISPER_MODEL".to_string(), p("model.bin")),
-            ("GM_PYTHON".to_string(), fake_python.to_string_lossy().into_owned()),
+            ("GM_PYTHON".to_string(), "python3".to_string()),
+            ("PYTHONPATH".to_string(), FAKE_CHROMA.to_string()),
         ]);
         env.extend(extra_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
         let opened = Rc::new(RefCell::new(Vec::new()));
@@ -1063,17 +1050,17 @@ fn index_anyway_chunks_and_stores_and_the_result_is_in_the_status_and_the_log() 
     rig.pump_until("indexing", |a| !a.running());
     let r = rig.app.index_report.clone().unwrap();
     assert!(r.ok(), "{}", r.headline());
-    assert_eq!(
-        rig.app.status.text,
-        "Indexed 2 chunks of session 1; the store now holds 5."
+    let status = rig.app.status.text.clone();
+    assert!(
+        status.starts_with("Indexed ") && status.contains(" chunks of session 1; the store now holds "),
+        "{status}"
     );
+    let stored = fs::read_to_string(rig.tmp.path().join("chroma/demo/store.json")).unwrap();
+    assert!(stored.contains("Cinder Road"), "the chunk reached the store: {stored}");
     assert_eq!(rig.app.status.kind, StatusKind::Ok);
     assert!(rig.chunks_path().is_file());
     let log = rig.app.log.iter().cloned().collect::<Vec<_>>().join("\n");
-    assert!(
-        log.contains("Upserted 2 chunks") && log.contains("== Result =="),
-        "{log}"
-    );
+    assert!(log.contains("Upserted ") && log.contains("== Result =="), "{log}");
     let screen = rig.draw();
     assert!(screen.contains("Indexed "), "{screen}");
 }
@@ -1098,7 +1085,7 @@ fn with_a_review_only_list_indexing_starts_straight_away() {
 #[test]
 fn a_missing_chromadb_is_explained_in_the_status() {
     require_tools!();
-    let mut rig = Rig::new(&[("FAKE_NO_CHROMA", "1")]);
+    let mut rig = Rig::new(&[("PYTHONPATH", NO_CHROMA)]);
     rig.transcribed(INDEX_ALIASES);
     rig.press('i');
     rig.press('i');
@@ -1107,7 +1094,7 @@ fn a_missing_chromadb_is_explained_in_the_status() {
     assert!(!r.ok());
     let status = rig.app.status.text.clone();
     assert!(
-        status.contains("Storing in ChromaDB failed") && status.contains("pip install -r"),
+        status.contains("Storing in ChromaDB failed") && status.contains("pip install chromadb"),
         "{status}"
     );
     assert_eq!(rig.app.status.kind, StatusKind::Error);
@@ -1118,7 +1105,7 @@ fn a_missing_chromadb_is_explained_in_the_status() {
 #[test]
 fn x_cancels_indexing_and_the_app_says_nothing_was_added() {
     require_tools!();
-    let mut rig = Rig::new(&[("FAKE_SLEEP", "30")]);
+    let mut rig = Rig::new(&[("FAKE_CHROMA_SLEEP", "30")]);
     rig.transcribed(INDEX_ALIASES);
     rig.press('i');
     rig.press('i');

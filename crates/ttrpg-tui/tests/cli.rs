@@ -146,7 +146,7 @@ fn negative_and_zero_sessions_parse() {
     assert!(!out.status.success());
 }
 
-/// Same command through `legacy/campaign.py` and the binary: identical stdout.
+/// Same command through `tests/oracle/campaign.py` and the binary: identical stdout.
 #[test]
 fn plain_commands_match_the_python_original() {
     let Some(py) = std::env::var_os("PATH").and_then(|p| {
@@ -159,7 +159,7 @@ fn plain_commands_match_the_python_original() {
     };
     let v = Vault::new();
     let env = v.env();
-    let legacy = repo_root().join("legacy/campaign.py");
+    let legacy = repo_root().join("crates/ttrpg-core/tests/oracle/campaign.py");
     for args in [
         &["list"][..],
         &["paths", "--campaign", "emberfall/main"],
@@ -222,7 +222,7 @@ fn check_names_what_is_missing_exits_1_and_creates_nothing() {
             "{gone} is not needed:\n{stdout}"
         );
     }
-    assert!(stdout.contains("[OK] Index helper"), "{stdout}");
+    assert!(stdout.contains("[optional] ChromaDB for Index"), "{stdout}");
     assert_eq!(
         files_under(v.tmp.path()),
         before,
@@ -251,4 +251,135 @@ fn check_passes_when_the_tools_are_there() {
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stdout));
     assert!(text(&out.stdout).contains("[OK] whisper-cli"));
     assert!(!text(&out.stdout).contains("Missing:"));
+}
+
+fn python_present() -> bool {
+    Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// A store holding one chunk from session 4, made by the real helper against the stand-in chromadb.
+fn memory_env(v: &Vault) -> HashMap<String, String> {
+    let mut env = v.env();
+    env.insert("PATH".into(), std::env::var("PATH").unwrap_or_default());
+    env.insert(
+        "PYTHONPATH".into(),
+        repo_root()
+            .join("crates/ttrpg-core/tests/fixtures/fake_chroma")
+            .to_string_lossy()
+            .into_owned(),
+    );
+    env
+}
+
+fn seed_store(v: &Vault, env: &HashMap<String, String>) {
+    let jsonl = v.tmp.path().join("chunks.jsonl");
+    fs::write(
+        &jsonl,
+        r#"{"id": "s04_c000", "document": "Vashti_Corrow: we take the dark road.", "metadata": {"session": 4, "start": "00:01:00", "end": "00:02:00", "characters": "Vashti_Corrow", "has_Vashti_Corrow": true}}"#.to_owned() + "\n",
+    )
+    .unwrap();
+    let db = v.tmp.path().join("chroma/emberfall/main");
+    let out = Command::new("python3")
+        .arg(repo_root().join("python/chroma_memory.py"))
+        .args(["ingest", "--db"])
+        .arg(&db)
+        .arg(&jsonl)
+        .env_clear()
+        .envs(env)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out.stderr));
+}
+
+#[test]
+fn info_names_the_campaign_and_shows_what_is_in_its_store() {
+    if !python_present() {
+        eprintln!("SKIPPED: python3 not found");
+        return;
+    }
+    let v = Vault::new();
+    let env = memory_env(&v);
+    let out = run(&env, &["info", "emberfall/main"]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let before = text(&out.stdout);
+    assert!(
+        before.starts_with("campaign   : emberfall/main (Emberfall, daggerheart)\n"),
+        "{before}"
+    );
+    assert!(
+        before.contains("exists     : False") && before.contains("chunks     : 0 (no store yet)"),
+        "{before}"
+    );
+    assert!(before.contains("pcs        : Vashti_Corrow, Bram_Ollander"), "{before}");
+
+    seed_store(&v, &env);
+    let after = text(&run(&env, &["info", "emberfall/main"]).stdout);
+    assert!(
+        after.contains("chunks     : 1") && after.contains("sessions   : 4"),
+        "{after}"
+    );
+    assert!(
+        after.contains(&format!(
+            "db path    : {}",
+            v.tmp.path().join("chroma/emberfall/main").display()
+        )),
+        "{after}"
+    );
+}
+
+#[test]
+fn query_passes_the_question_and_the_filters_to_the_store() {
+    if !python_present() {
+        eprintln!("SKIPPED: python3 not found");
+        return;
+    }
+    let v = Vault::new();
+    let env = memory_env(&v);
+    seed_store(&v, &env);
+    let out = run(
+        &env,
+        &[
+            "query",
+            "emberfall/main",
+            "--from",
+            "3",
+            "--char",
+            "Vashti Corrow",
+            "-k",
+            "2",
+            "--",
+            "the dark road",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let stdout = text(&out.stdout);
+    assert!(
+        stdout.contains("=== s4 00:01:00-00:02:00 [Vashti_Corrow] cos_dist="),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Vashti_Corrow: we take the dark road."), "{stdout}");
+
+    let none = text(&run(&env, &["query", "emberfall/main", "road", "--contains", "dragon"]).stdout);
+    assert!(none.starts_with("No results in "), "{none}");
+}
+
+#[test]
+fn info_and_query_say_so_for_an_unknown_campaign_or_a_missing_python() {
+    let v = Vault::new();
+    let out = run(&v.env(), &["info", "emberfall/nope"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(text(&out.stderr).starts_with("ERROR: "), "{}", text(&out.stderr));
+
+    let mut env = v.env();
+    env.insert("GM_PYTHON".into(), "/no/such/python".into());
+    let out = run(&env, &["query", "emberfall/main", "anything"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        text(&out.stderr).contains("Could not start /no/such/python"),
+        "{}",
+        text(&out.stderr)
+    );
 }

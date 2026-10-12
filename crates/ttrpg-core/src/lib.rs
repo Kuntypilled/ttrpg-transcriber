@@ -1,6 +1,6 @@
 //! Core of the session transcriber: configuration, campaign registry, path
 //! rules and the transcription job. No UI. Behaviour is ported from
-//! `legacy/campaign.py` and checked against it by the parity tests (see
+//! `tests/oracle/campaign.py` and checked against it by the parity tests (see
 //! PORTING.md sections 3 and 9); the job runs in Rust ([`transcribe`]).
 
 pub mod alias_report;
@@ -12,7 +12,7 @@ pub mod difflib;
 pub mod error;
 pub mod index;
 pub mod job;
-pub mod legacy;
+pub mod memory;
 pub mod options;
 pub mod pipeline;
 pub mod preflight;
@@ -35,6 +35,7 @@ pub use campaign::{
 pub use error::CampaignError;
 pub use index::{IndexKind, IndexPlan, IndexReport, execute_index, plan_index};
 pub use job::{JobPlan, PipelineEvent, RunReport, execute, has_saved_output, plan_job, plan_reprocess};
+pub use memory::{MemoryCommand, run_memory_command};
 pub use progress::{Phase, ProgressEvent, Tracker, is_whisper_segment_line};
 pub use settings::{Settings, Sourced};
 pub use stock::StockRule;

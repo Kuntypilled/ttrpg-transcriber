@@ -9,7 +9,7 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../../.." && pwd)"
-script="$repo/legacy/transcribe.sh"
+script="$repo/crates/ttrpg-core/tests/oracle/transcribe.sh"
 
 run_case() {
     local name="$1"; shift
