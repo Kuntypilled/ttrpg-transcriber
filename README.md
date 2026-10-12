@@ -1,14 +1,18 @@
 # ttrpg-tui
 
 A terminal front end (ratatui, mouse enabled) for the TTRPG session transcriber.
-It replaces the GTK GUI in `Kuntypilled/ttrpg-transcriber`, which stays untouched
-until this one is verified. The specification is [PORTING.md](PORTING.md).
+It replaces the GTK GUI in `Kuntypilled/ttrpg-transcriber`, which stays untouched on
+`main`; a branch there (`claude/gallant-davinci-ryh11c`) adds the archive notice and is
+meant to be merged once this one is verified on a real session. The specification is [PORTING.md](PORTING.md).
 What was found to differ between that document and the code is in
 [ERRATA.md](ERRATA.md).
 
 ## Status
 
-Milestones 1 to 6 of 7 (PORTING.md section 11).
+All seven milestones of PORTING.md section 11 are done. The cutover (7) is the branch
+in the original repository, not yet merged. What has not happened is a run on a real
+session with real whisper and real ChromaDB: everything is tested against stand-ins and
+against the original scripts' output on invented data.
 
 What you can do now:
 
@@ -55,7 +59,9 @@ each checked byte for byte against the scripts they replaced. ChromaDB itself st
 Python for good: Index, `info` and `query` need the Python that has ChromaDB installed
 (the `python` setting). The small Python helper that talks to it is built into the
 program (`python/chroma_memory.py`) and no longer needs any of the original scripts.
-Not done yet: milestone 7, the cutover in the original repository.
+Before relying on it, run one real session through it and compare `transcript.md` and
+the chunk file with what the GUI makes from the same audio, then run
+`ttrpg-tui info CAMPAIGN` against a real store.
 
 ## Try it without whisper or real recordings
 
