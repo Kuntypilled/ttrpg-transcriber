@@ -1,0 +1,43 @@
+Timestamp,Level,Message
+INFO,Campaign : demo
+INFO,Aliases  : <root>/vault/0.2_campaigns/demo/canon_aliases.json
+INFO,Input    : <root>/audio/demo/Session 7
+INFO,Output   : <root>/vault/0.2_campaigns/demo/08_transcripts/S07
+INFO,Temp     : <root>/work/demo/S07/temp
+INFO,Model    : <root>/model.bin
+INFO,Force    : false | PostOnly: false | Cleanup: false
+INFO,Filter   : you silence um uh ah like right well
+INFO,Stock    : thank you,we'll be right back when 20 s or more
+INFO,Found 5 audio file(s)
+INFO,Transcribing: 1-gmperson.flac — speaker: GM (N MB)
+INFO,  Converting to WAV via ffmpeg...
+INFO,  Processed: 1-gmperson.processed.tsv — filtered: 1, collapsed: 1
+INFO,Done: 1-gmperson.flac in Ns
+INFO,Transcribing: 2-riverone.flac — speaker: Mara_Quill (N MB)
+INFO,  Converting to WAV via ffmpeg...
+INFO,  Processed: 2-riverone.processed.tsv — filtered: 1, collapsed: 1
+INFO,Done: 2-riverone.flac in Ns
+INFO,Transcribing: 3-rivertwo.flac — speaker: Tomas_Ink (N MB)
+INFO,  Converting to WAV via ffmpeg...
+INFO,  Processed: 3-rivertwo.processed.tsv — filtered: 1, collapsed: 1, stock phrases dropped: 1
+INFO,Done: 3-rivertwo.flac in Ns
+INFO,Transcribing: 4-plain_0.flac — speaker: plain (N MB)
+INFO,  Converting to WAV via ffmpeg...
+INFO,  Processed: 4-plain_0.processed.tsv — filtered: 1, collapsed: 1
+INFO,Done: 4-plain_0.flac in Ns
+INFO,Transcribing: 5-newperson.flac — speaker: 5-newperson (N MB)
+INFO,  Converting to WAV via ffmpeg...
+INFO,  Processed: 5-newperson.processed.tsv — filtered: 1, collapsed: 1
+INFO,Done: 5-newperson.flac in Ns
+INFO,Running post-processing pipeline...
+INFO,Aggregating 5 processed files...
+INFO,Created merged_transcript.tsv
+INFO,Speaker file: temp/5-newperson_transcript.tsv
+INFO,Speaker file: temp/GM_transcript.tsv
+INFO,Speaker file: temp/Mara_Quill_transcript.tsv
+INFO,Speaker file: temp/Tomas_Ink_transcript.tsv
+INFO,Speaker file: temp/plain_transcript.tsv
+INFO,Consolidating consecutive same-speaker lines...
+INFO,Created consolidated_transcript.tsv (17 → 16 lines, 5% reduction)
+INFO,Creating transcript.md...
+INFO,Created transcript.md (16 entries)

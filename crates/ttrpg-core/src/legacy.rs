@@ -1,9 +1,10 @@
-//! Finding the folder that holds `transcribe.sh`, `campaign.py` and friends.
+//! Finding the folder that holds the Chroma helper (`chroma_memory.py`) and the
+//! `campaign.py` it imports.
 //!
-//! Until the Rust pipeline replaces them (PORTING.md section 11, milestone 5), the
-//! TUI runs the original scripts. Order: `$GM_LEGACY_DIR` or the `legacy_dir`
-//! config key, then a `legacy/` folder at or above the program, then the folder
-//! in the source checkout this binary was built from.
+//! The Rust pipeline has replaced every other script (PORTING.md section 11,
+//! milestone 5); Index to Memory still runs this one. Order: `$GM_LEGACY_DIR` or the
+//! `legacy_dir` config key, then a `legacy/` folder at or above the program, then
+//! the folder in the source checkout this binary was built from.
 
 use std::path::Path;
 
@@ -11,7 +12,7 @@ use crate::error::CampaignError;
 use crate::settings::{Settings, Sourced};
 
 /// The scripts the TUI shells out to.
-pub const REQUIRED_SCRIPTS: [&str; 2] = ["transcribe.sh", "campaign.py"];
+pub const REQUIRED_SCRIPTS: [&str; 2] = ["chroma_memory.py", "campaign.py"];
 
 fn has_scripts(dir: &str) -> bool {
     REQUIRED_SCRIPTS.iter().all(|s| Path::new(dir).join(s).is_file())

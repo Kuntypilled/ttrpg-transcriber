@@ -1,0 +1,18 @@
+speaker	start	end	text
+5-newperson	1000	3000	The lantern is lit.
+GM	1000	3000	The lantern is lit.
+Mara_Quill	1000	3000	The lantern is lit.
+Tomas_Ink	1000	3000	The lantern is lit.
+plain	1000	3000	The lantern is lit.
+5-newperson	4000	5000	It’s the Cinder Road.
+GM	4000	5000	It’s the Cinder Road.
+Mara_Quill	4000	5000	It’s the Cinder Road.
+Tomas_Ink	4000	5000	It’s the Cinder Road.
+plain	4000	5000	It’s the Cinder Road.
+GM	7500	8700	This is track 1-gmperson.
+Mara_Quill	9000	10200	This is track 2-riverone.
+Tomas_Ink	10500	11700	This is track 3-rivertwo.
+plain	12000	13200	This is track 4-plain_0.
+5-newperson	13500	14700	This is track 5-newperson.
+Tomas_Ink	51000	52000	We go on.
+Tomas_Ink	53000	54500	Thank you.

@@ -14,6 +14,13 @@ use std::time::{Duration, Instant};
 /// Seconds between asking a process to stop and forcing it.
 pub const GRACE: Duration = Duration::from_secs(3);
 
+/// Which stream a line came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stream {
+    Out,
+    Err,
+}
+
 /// How a child ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Outcome {
@@ -23,7 +30,7 @@ pub struct Outcome {
     pub cancelled: bool,
 }
 
-fn spawn_reader<R: Read + Send + 'static>(stream: R, lines: Sender<String>) -> JoinHandle<()> {
+fn spawn_reader<R: Read + Send + 'static>(which: Stream, stream: R, lines: Sender<(Stream, String)>) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut reader = BufReader::new(stream);
         let mut buf = Vec::new();
@@ -33,7 +40,7 @@ fn spawn_reader<R: Read + Send + 'static>(stream: R, lines: Sender<String>) -> J
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
                     let line = String::from_utf8_lossy(&buf).trim_end_matches(['\r', '\n']).to_string();
-                    if lines.send(line).is_err() {
+                    if lines.send((which, line)).is_err() {
                         break;
                     }
                 }
@@ -59,7 +66,7 @@ pub fn signal_group(pid: u32, signal: &str) {
 }
 
 /// Run `program args` with exactly `env`, calling `on_line` for every line of stdout
-/// and stderr as it arrives. When `cancel` becomes true the group is asked to stop
+/// and stderr as it arrives, tagged with the stream. When `cancel` becomes true the group is asked to stop
 /// (`on_cancel` is called once), then killed after [`GRACE`]. Err is only "could not
 /// start it".
 pub fn run_streaming(
@@ -67,7 +74,7 @@ pub fn run_streaming(
     args: &[String],
     env: &HashMap<String, String>,
     cancel: &AtomicBool,
-    mut on_line: impl FnMut(String),
+    mut on_line: impl FnMut(Stream, String),
     mut on_cancel: impl FnMut(),
 ) -> Result<Outcome, std::io::Error> {
     let mut child = Command::new(program)
@@ -80,10 +87,16 @@ pub fn run_streaming(
         .process_group(0)
         .spawn()?;
     let pid = child.id();
-    let (line_tx, line_rx) = mpsc::channel::<String>();
+    let (line_tx, line_rx) = mpsc::channel::<(Stream, String)>();
     let readers = [
-        child.stdout.take().map(|s| spawn_reader(s, line_tx.clone())),
-        child.stderr.take().map(|s| spawn_reader(s, line_tx.clone())),
+        child
+            .stdout
+            .take()
+            .map(|s| spawn_reader(Stream::Out, s, line_tx.clone())),
+        child
+            .stderr
+            .take()
+            .map(|s| spawn_reader(Stream::Err, s, line_tx.clone())),
     ];
     drop(line_tx);
 
@@ -92,7 +105,7 @@ pub fn run_streaming(
     let mut forced = false;
     loop {
         match line_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(line) => on_line(line),
+            Ok((which, line)) => on_line(which, line),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -140,7 +153,7 @@ mod tests {
             &["-c".into(), "echo one; echo two >&2; exit 3".into()],
             &env(),
             &AtomicBool::new(false),
-            |l| got.push(l),
+            |_, l| got.push(l),
             || {},
         )
         .unwrap();
@@ -162,7 +175,7 @@ mod tests {
             &[],
             &env(),
             &AtomicBool::new(false),
-            |_| {},
+            |_, _| {},
             || {},
         );
         assert!(r.is_err());
@@ -179,7 +192,7 @@ mod tests {
             &["-c".into(), "sleep 30 & echo started; wait".into()],
             &env(),
             &cancel,
-            |l| {
+            |_, l| {
                 if l == "started" {
                     c2.store(true, Ordering::Relaxed);
                 }

@@ -1,10 +1,9 @@
-//! The stock-phrase rule of `legacy/transcribe.sh` as a setting.
+//! The stock-phrase rule as a setting.
 //!
 //! Whisper invents "Thank you." on a silent stretch of a track, one per 30 s
-//! window, and the script's collapse step joins the repeats into one long line.
-//! The script drops a line that is exactly one of these phrases when it lasts
-//! `min_seconds` or more (see `legacy/README.md` and `ERRATA.md` for the reasoning).
-//! The defaults here are the script's own; a test keeps them equal.
+//! window, and the collapse step joins the repeats into one long line. A line that is
+//! exactly one of these phrases is dropped when it lasts `min_seconds` or more (see
+//! `ERRATA.md` for the reasoning). The rule itself is applied in [`crate::pipeline`].
 //!
 //! Settings, in the usual order (environment, then the config file):
 //!
@@ -76,20 +75,6 @@ impl StockRule {
                 format!("Set by {by}.")
             }
         })
-    }
-
-    /// The flags that make `transcribe.sh` behave this way. None when the script's
-    /// own defaults already do, so an older script without the flags still runs.
-    pub fn script_args(&self) -> Vec<String> {
-        let d = Self::default();
-        let mut args = Vec::new();
-        if self.phrases != d.phrases {
-            args.extend(["--stock-phrases".to_string(), self.phrases.join(",")]);
-        }
-        if self.min_seconds != d.min_seconds {
-            args.extend(["--stock-min-seconds".to_string(), self.min_seconds.to_string()]);
-        }
-        args
     }
 
     /// `"thank you" and "we'll be right back"`, or `"a", "b" and "c"`.
@@ -257,39 +242,14 @@ mod tests {
     }
 
     #[test]
-    fn with_nothing_set_it_is_the_scripts_default_and_passes_no_flags() {
+    fn with_nothing_set_it_is_the_default() {
         let (s, _t) = settings(&[], None);
         let r = s.stock_rule().unwrap();
         assert_eq!(r, StockRule::default());
-        assert!(r.enabled() && r.script_args().is_empty() && r.set_by.is_none());
+        assert!(r.enabled() && r.set_by.is_none());
         assert_eq!(
             r.describe(),
             "\"thank you\" and \"we'll be right back\" lines that last 20 s or more are dropped"
-        );
-    }
-
-    #[test]
-    fn the_defaults_equal_the_ones_in_the_script() {
-        let script =
-            fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../legacy/transcribe.sh"))
-                .unwrap();
-        let line = |prefix: &str| {
-            script
-                .lines()
-                .find(|l| l.starts_with(prefix))
-                .unwrap_or_else(|| panic!("{prefix} not in transcribe.sh"))
-                .to_string()
-        };
-        let phrases: Vec<String> = line("DEFAULT_STOCK_PHRASES=(")
-            .split('"')
-            .skip(1)
-            .step_by(2)
-            .map(str::to_string)
-            .collect();
-        assert_eq!(phrases, DEFAULT_PHRASES);
-        assert_eq!(
-            line("DEFAULT_STOCK_MIN_SECONDS="),
-            format!("DEFAULT_STOCK_MIN_SECONDS={DEFAULT_MIN_SECONDS}")
         );
     }
 
@@ -303,15 +263,6 @@ mod tests {
         assert_eq!(r.phrases, ["Thanks for watching", "bye"]);
         assert_eq!(r.min_seconds, 30);
         assert_eq!(r.set_by.as_deref(), Some("$GM_STOCK_PHRASES"));
-        assert_eq!(
-            r.script_args(),
-            [
-                "--stock-phrases",
-                "Thanks for watching,bye",
-                "--stock-min-seconds",
-                "30"
-            ]
-        );
         assert_eq!(r.phrase_list(), "\"Thanks for watching\" and \"bye\"");
     }
 
@@ -338,7 +289,6 @@ mod tests {
             let (s, _t) = settings(&[], Some(off));
             let r = s.stock_rule().unwrap();
             assert!(!r.enabled(), "{off}");
-            assert_eq!(r.script_args(), ["--stock-phrases", ""], "{off}");
             assert!(r.describe().starts_with("off"));
         }
         let (s, _t) = settings(&[(PHRASES_ENV, "off")], None);
@@ -354,7 +304,7 @@ mod tests {
             Some(r#"{"stock_phrases": ["thank you", "we'll be right back"], "stock_min_seconds": 20}"#),
         );
         let r = s.stock_rule().unwrap();
-        assert!(r.set_by.is_none() && r.script_args().is_empty());
+        assert!(r.set_by.is_none());
     }
 
     #[test]
@@ -402,6 +352,5 @@ mod tests {
         assert_eq!(r.set_by.as_deref(), Some("turned off for this run"));
         assert_eq!(r.origin_note().as_deref(), Some("Turned off for this run."));
         assert_eq!(StockRule::default().origin_note(), None);
-        assert_eq!(r.script_args(), ["--stock-phrases", "", "--stock-min-seconds", "45"]);
     }
 }

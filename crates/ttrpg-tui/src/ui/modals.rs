@@ -1,6 +1,8 @@
 //! Dialogs drawn over the main screen: help, the tool check, the confirm-before-moving
 //! step, and the file picker.
 
+use std::path::Path;
+
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -65,6 +67,7 @@ fn help(frame: &mut Frame) {
         key_row("n", "type the session number (+ and - adjust it)"),
         key_row("f", "choose the Craig audio files"),
         key_row("s", "start: move the files in and transcribe"),
+        key_row("p", "rebuild the transcript from the saved whisper output (no audio)"),
         key_row("x", "cancel the running job"),
         key_row(
             "i",
@@ -77,6 +80,7 @@ fn help(frame: &mut Frame) {
         key_row("o", "open the session folder"),
         key_row("c", "clear the chosen files"),
         key_row("t", "at the confirm step: keep or drop whisper's invented lines"),
+        key_row("F", "at the confirm step: transcribe finished tracks again"),
         key_row("r", "resolve unknown speakers (add them to discord_names)"),
         key_row("R", "rescan campaigns and tools"),
         key_row("!", "what is installed and what is missing"),
@@ -121,8 +125,8 @@ fn setup(frame: &mut Frame, app: &App) {
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
         format!(
-            "Tool paths come from GM_WHISPER_BIN, GM_WHISPER_MODEL and GM_LEGACY_DIR, or from whisper_bin, \
-             whisper_model and legacy_dir in {}.",
+            "Tool paths come from GM_WHISPER_BIN, GM_WHISPER_MODEL and GM_PYTHON, or from whisper_bin, \
+             whisper_model and python in {}.",
             app.settings.config_path()
         ),
         DIM,
@@ -146,17 +150,35 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
             "Session",
             &format!("{}  ({})", plan.session, session_folder(plan.session)),
         ),
-        pair(
+    ];
+    if !plan.reprocess {
+        lines.push(pair(
             "Tracks",
             &format!(
                 "{} ({moves} to move in, {} already in the folder)",
                 plan.track_count(),
                 plan.existing.len()
             ),
-        ),
-        Line::default(),
-    ];
-    if moves > 0 {
+        ));
+    }
+    lines.push(Line::default());
+    if plan.reprocess {
+        lines.push(Line::from(
+            "Rebuilds merged_transcript.tsv, consolidated_transcript.tsv and transcript.md from the \
+             whisper output saved in archive/.",
+        ));
+        lines.push(Line::from(Span::styled(
+            "No audio is read, nothing is moved, and whisper does not run again.",
+            DIM,
+        )));
+        if Path::new(&plan.transcript_md).is_file() {
+            lines.push(Line::default());
+            lines.push(Line::from(Span::styled(
+                "⚠ transcript.md is rewritten. Anything you edited in it by hand is lost.",
+                WARN,
+            )));
+        }
+    } else if moves > 0 {
         lines.push(Line::from(vec![
             Span::styled("MOVE", Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::raw(format!(" (not copy) {moves} file(s) into:")),
@@ -173,15 +195,25 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
         )));
         lines.push(Line::from(format!("  {}", plan.audio_dir)));
         lines.push(Line::from(Span::styled(
-            "Tracks that were already transcribed are skipped.",
+            if plan.force {
+                "Every track is transcribed again."
+            } else {
+                "Tracks that were already transcribed are skipped."
+            },
             DIM,
+        )));
+    }
+    if moves > 0 && plan.force {
+        lines.push(Line::from(Span::styled(
+            "Every track is transcribed again, including ones already done.",
+            WARN,
         )));
     }
     if !overwritten.is_empty() {
         lines.push(Line::default());
         lines.push(Line::from(Span::styled(
             format!(
-                "⚠ {} file(s) replace ones with the same name already there: {}",
+                "⚠ {} file(s) replace ones with the same name already there, and are transcribed again: {}",
                 overwritten.len(),
                 overwritten.join(", ")
             ),
@@ -222,12 +254,20 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
         .iter()
         .map(|l| (l.width() / usize::from(w.saturating_sub(4)).max(1)) + 1)
         .sum();
-    let h = (wrapped as u16 + 4).min(area.height.saturating_sub(2));
-    let inner = popup(frame, w, h, "Start transcription?");
-    let [body, buttons] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+    let h = (wrapped as u16 + 5).min(area.height.saturating_sub(2));
+    let title = if plan.reprocess {
+        "Rebuild the transcript?"
+    } else {
+        "Start transcription?"
+    };
+    let inner = popup(frame, w, h, title);
+    let [body, buttons, toggles] =
+        Layout::vertical([Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)]).areas(inner);
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
 
-    let ok_text = if moves > 0 {
+    let ok_text = if plan.reprocess {
+        "[Enter] Rebuild"
+    } else if moves > 0 {
         "[Enter] Move and start"
     } else {
         "[Enter] Start"
@@ -238,24 +278,36 @@ fn confirm(frame: &mut Frame, app: &mut App, plan: &JobPlan) {
     } else {
         "[t] Drop invented lines"
     };
-    let ok_w = u16::try_from(text::width(ok_text)).unwrap_or(0);
-    let cancel_w = u16::try_from(text::width(cancel_text)).unwrap_or(0);
-    let stock_w = u16::try_from(text::width(stock_text)).unwrap_or(0);
-    let ok_rect = Rect::new(buttons.x + 1, buttons.y, ok_w, 1).intersection(buttons);
-    let cancel_rect = Rect::new(ok_rect.x + ok_w + 3, buttons.y, cancel_w, 1).intersection(buttons);
-    let stock_rect = Rect::new(cancel_rect.x + cancel_w + 3, buttons.y, stock_w, 1).intersection(buttons);
+    let force_text = if plan.force {
+        "[F] Skip finished tracks"
+    } else {
+        "[F] Transcribe all again"
+    };
+    let width = |t: &str| u16::try_from(text::width(t)).unwrap_or(0);
+    let ok_rect = Rect::new(buttons.x + 1, buttons.y, width(ok_text), 1).intersection(buttons);
+    let cancel_rect = Rect::new(ok_rect.x + width(ok_text) + 3, buttons.y, width(cancel_text), 1).intersection(buttons);
+    let stock_rect = Rect::new(toggles.x + 1, toggles.y, width(stock_text), 1).intersection(toggles);
+    let force_rect =
+        Rect::new(stock_rect.x + width(stock_text) + 3, toggles.y, width(force_text), 1).intersection(toggles);
     app.hit.confirm_ok = ok_rect;
     app.hit.confirm_cancel = cancel_rect;
     app.hit.confirm_stock = stock_rect;
-    let line = Line::from(vec![
-        Span::raw(" "),
-        Span::styled(ok_text, OK.add_modifier(Modifier::BOLD)),
-        Span::raw("   "),
-        Span::styled(cancel_text, BOLD),
-        Span::raw("   "),
-        Span::styled(stock_text, LABEL),
-    ]);
-    frame.render_widget(Paragraph::new(line), buttons);
+    app.hit.confirm_force = if plan.reprocess { Rect::default() } else { force_rect };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(ok_text, OK.add_modifier(Modifier::BOLD)),
+            Span::raw("   "),
+            Span::styled(cancel_text, BOLD),
+        ])),
+        buttons,
+    );
+    let mut toggle_spans = vec![Span::raw(" "), Span::styled(stock_text, LABEL)];
+    if !plan.reprocess {
+        toggle_spans.push(Span::raw("   "));
+        toggle_spans.push(Span::styled(force_text, LABEL));
+    }
+    frame.render_widget(Paragraph::new(Line::from(toggle_spans)), toggles);
 }
 
 /// Indexing a campaign with no `review_only` list: PORTING.md section 7.3's three choices.

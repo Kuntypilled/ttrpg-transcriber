@@ -1,7 +1,8 @@
 //! Are the tools the pipeline shells out to present? (PORTING.md section 4.3.)
 //!
-//! This replaces `transcribe.sh --check` for the TUI. That flag creates the output
-//! folders and CSV files as a side effect, so it cannot be run at startup.
+//! Transcribing needs ffmpeg, whisper-cli and a whisper model, and nothing else.
+//! Python and the Chroma helper are for Index to Memory only, so they are optional
+//! here: without them everything but Index works.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -101,27 +102,12 @@ fn tool(settings: &Settings, name: &str, command: &str, hint: String) -> DepItem
 }
 
 pub fn preflight(settings: &Settings) -> PreflightReport {
-    let mut items = vec![
-        tool(
-            settings,
-            "bash",
-            "bash",
-            install_hint(settings, "bash", "bash", "bash", "bash"),
-        ),
-        tool(
-            settings,
-            "python3",
-            "python3",
-            install_hint(settings, "python3", "python", "python3", "python3"),
-        ),
-        tool(
-            settings,
-            "ffmpeg",
-            "ffmpeg",
-            install_hint(settings, "ffmpeg", "ffmpeg", "ffmpeg", "ffmpeg"),
-        ),
-        tool(settings, "jq", "jq", install_hint(settings, "jq", "jq", "jq", "jq")),
-    ];
+    let mut items = vec![tool(
+        settings,
+        "ffmpeg",
+        "ffmpeg",
+        install_hint(settings, "ffmpeg", "ffmpeg", "ffmpeg", "ffmpeg"),
+    )];
 
     match settings.effective_whisper_bin() {
         Ok(bin) => {
@@ -182,8 +168,8 @@ pub fn preflight(settings: &Settings) -> PreflightReport {
         Err(e) => DepStatus::Missing(vec![e.to_string()]),
     };
     items.push(DepItem {
-        name: "legacy scripts".into(),
-        required: true,
+        name: "Index helper".into(),
+        required: false,
         status,
     });
 
@@ -276,17 +262,21 @@ mod tests {
         let r = preflight(&s);
         assert!(!r.ok());
         let missing = r.missing_names();
-        for name in ["bash", "python3", "ffmpeg", "jq", "whisper-cli", "whisper model"] {
+        for name in ["ffmpeg", "whisper-cli", "whisper model"] {
             assert!(missing.contains(name), "{missing}");
         }
-        assert!(!missing.contains("xdg-open"), "optional items never block");
-        assert!(!missing.contains("legacy scripts"), "found via the checkout: {missing}");
+        for optional in ["bash", "python", "jq", "xdg-open", "Index helper"] {
+            assert!(
+                !missing.contains(optional),
+                "{optional} never blocks transcribing: {missing}"
+            );
+        }
     }
 
     #[test]
     fn a_complete_machine_passes() {
         let tmp = TempDir::new().unwrap();
-        for t in ["bash", "python3", "ffmpeg", "jq", "my-whisper"] {
+        for t in ["ffmpeg", "my-whisper"] {
             install(tmp.path(), t);
         }
         let model = tmp.path().join("m.bin");
@@ -311,6 +301,6 @@ mod tests {
         let r = preflight(&settings_with_path(tmp.path(), &[]));
         let text = render(&r);
         assert!(text.contains("sudo pacman -S --needed ffmpeg"), "{text}");
-        assert!(text.contains("sudo pacman -S --needed python"), "{text}");
+        assert!(!text.contains("jq"), "no longer needed: {text}");
     }
 }

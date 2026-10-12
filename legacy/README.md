@@ -6,10 +6,10 @@ carries the one local change listed below. Do not edit them otherwise.
 
 | File | Why it is here |
 |---|---|
-| `campaign.py` | The parity oracle: the Rust port in `crates/ttrpg-core` is tested against it. |
-| `transcribe.sh` | Called by the TUI from milestone 2 on, until the Rust pipeline replaces it. |
-| `transcript_to_chunks.py` | Same, until the Rust chunker replaces it. |
-| `chroma_memory.py` | Stays Python. Called as a subprocess. |
+| `campaign.py` | The parity oracle: the Rust port in `crates/ttrpg-core` is tested against it. Also imported by `chroma_memory.py`. |
+| `transcribe.sh` | No longer run by the program (milestone 5). It made the golden files in `crates/ttrpg-core/tests/fixtures/{pipeline,run}/`. |
+| `transcript_to_chunks.py` | Same, for `.../fixtures/chunker/` and `.../fixtures/report/`. |
+| `chroma_memory.py` | Stays Python. Called as a subprocess by Index. |
 | `requirements.txt` | Python dependencies of `chroma_memory.py`. |
 
 ## Local changes
@@ -25,5 +25,6 @@ reasoning and the evidence are in `ERRATA.md`; the tests are
 
 `transcribe.sh` and `transcript_to_chunks.py` import or call `campaign.py` from
 their own directory, so this folder must stay together. Delete it at milestone 6,
-once the shell scripts are retired and `chroma_memory.py` has been made
-self-contained (PORTING.md section 6.1, option 2).
+once `chroma_memory.py` has been made self-contained (PORTING.md section 6.1, option 2).
+The scripts' behaviour is kept in the golden files, each with the `generate.sh` that
+made it.

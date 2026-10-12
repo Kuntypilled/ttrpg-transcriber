@@ -1,0 +1,30 @@
+{
+ "systeminfo": "invented",
+ "model": {
+  "type": "stub"
+ },
+ "transcription": [
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 3000,
+    "to": 4000
+   },
+   "text": " Hello there."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 10000,
+    "to": 11000
+   },
+   "text": " ..."
+  }
+ ]
+}

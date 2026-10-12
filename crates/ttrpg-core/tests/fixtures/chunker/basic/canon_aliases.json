@@ -1,0 +1,56 @@
+{
+  "_comment": "invented",
+  "campaign": "Chunker fixture",
+  "system": "daggerheart",
+  "names": [
+    "Marrow Hall",
+    "Cinder Road",
+    "Wern"
+  ],
+  "aliases": {
+    "Marrow Hall": [
+      "Marro Hall",
+      "marrow hal"
+    ],
+    "Mara Quill": [
+      "Mara Quil",
+      "Quil"
+    ],
+    "Tomas Ink": [
+      "Thomas Inc"
+    ],
+    "Cinder Road": [
+      "Sinder Road",
+      "C++ Road"
+    ]
+  },
+  "review_only": {
+    "Wern": [
+      "were"
+    ],
+    "Marrow Hall": [
+      "borrow hall"
+    ]
+  },
+  "players": {
+    "Tomas_Ink": "Lee",
+    "Mara_Quill": "Pat"
+  },
+  "speaker_map": [
+    {
+      "match": "gm",
+      "player": "Sky",
+      "character": null
+    },
+    {
+      "match": "mara",
+      "player": "Pat",
+      "character": "Mara Quill"
+    },
+    {
+      "match": "tomas",
+      "player": "Lee",
+      "character": "Tomas_Ink"
+    }
+  ]
+}

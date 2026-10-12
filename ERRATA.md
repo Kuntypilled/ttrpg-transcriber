@@ -128,6 +128,43 @@ priority.
 | `i` and `a` are refused while any job runs | One job at a time |
 | The alias report opens itself when it finishes | PORTING.md 7.3 |
 
+### Milestone 5: the Rust pipeline
+
+`transcribe.sh`, `transcript_to_chunks.py` and the alias report are now Rust. Each stage
+was checked against the original on the same input, byte for byte: the per-track
+filtering and collapsing, the merge, the consolidation, `transcript.md`, the chunk
+JSONL, the alias report, and a whole run with a stub whisper. The files a run writes
+(`transcription_log.csv`, `transcription_state.csv`, `archive/`, `temp/*.processed.tsv`
+and the three transcripts) have the original's names and layout, so a session started by
+one can be finished by the other. The differences:
+
+| Difference | Why |
+|---|---|
+| The bar moves within a track, from whisper's own segment lines against the length of the converted audio | The original showed progress per track only. Whisper's lines are sparse in silence, so it can pause, but it never goes backwards |
+| A file that replaces one of the same name is transcribed again even though the state file says the name succeeded | The original skipped it, so a corrected download kept the old track's transcript, silently |
+| `F` at the confirmation (and `Options.force`) is `--force`; `p` is `--post-process-only` | They were flags the GUI never passed |
+| `ignore_words` and `whisper_max_context` are settings | They were flags the GUI never passed |
+| The per-speaker `temp/<speaker>_transcript.tsv` files and the `Speaker file:` log lines are gone | Nothing read them |
+| A new `Whisper  :` line in the log banner says which build ran and on which device | One line to read when a run goes wrong |
+| Double quotes in the file name, speaker and error text of a state row become single quotes | The original wrote them as they were, which breaks the CSV. A track named with a quote is therefore not recognised as done on the next run (it is transcribed again), as in the original |
+| Merge ties are always broken in byte order (the C locale) | The original used whatever locale it ran in, so the order of simultaneous lines from different tracks depended on the machine |
+| A speaker whose label is the word `speaker` is kept | The original's consolidation and Markdown loops skipped any row whose first field was `speaker`, to skip the header, and so dropped such a speaker's lines |
+| The raw `<track>.json` left by an earlier run is removed before whisper runs | A run in which whisper exits 0 without writing could otherwise be taken for a success on the old file |
+| Whisper output that is not valid JSON, or has no segments list, is an `Error` row ("Unreadable whisper output: ...") and a named failure | The original's `jq` failure ended the whole script under `set -e`, after the audio had been converted and nothing recorded |
+| Failing to start `ffmpeg` or `whisper-cli` is logged with the system's reason | The original printed the shell's "No such file" into the CSV log only |
+| The chunk file and the alias report are written by the program; their dates, ordering and rounding were checked against Python, including `difflib.SequenceMatcher` (reimplemented, since no crate matches its results) | Python is no longer needed for either |
+| Tools needed to transcribe: `ffmpeg`, `whisper-cli` and the model. `bash`, `jq` and `python3` are not | Nothing runs a script any more. Index still needs the Python with ChromaDB |
+
+Known limits of milestone 5:
+
+- A real, short "Thank you." that directly follows a run of invented ones is collapsed
+  into the run and dropped with it. That is the original's behaviour and the rule's
+  documented limit (see the stock-phrase rule below).
+- The progress inside a track needs whisper to print its segment lines to stdout, which
+  `whisper-cli` does by default. A build that does not shows the per-track bar only.
+- Reading the converted audio's length uses the WAV header; ffmpeg writing to a file
+  always fills it in.
+
 Known limits of milestone 4: ChromaDB itself is not tested here (no ChromaDB in the
 test environment); the tests stand in for it and check what is passed to it and how
 the app reads the answer. `query` and `info` against the store are not in the app.
@@ -139,22 +176,22 @@ the indent and the line layout are.
 
 Known limits of milestone 2:
 
-- Progress is per track. A single track shows a spinner and elapsed time. The real
-  log shows a 73-minute track takes under 40 s, so this was left for later.
-- Unknown speakers can be seen but not added from inside the app (milestone 3). The
-  script labels such a track by its file name.
-- `--force`, `--post-process-only`, `--cleanup`, `--ignore-words` and `-mc` are not
-  exposed yet. The two stock-phrase options are (settings, and `t` at the confirm step).
-- `transcribe.sh` still transcribes every audio file in the session folder, not only
-  the ones chosen in this run, and the list in the app shows both.
+- Progress was per track here; milestone 5 made it move within a track.
+- Unknown speakers can be seen but not added from inside the app (milestone 3 does
+  that). Such a track is labelled by its file name.
+- `--force` and `--post-process-only` are `F` and `p` in milestone 5; `--cleanup` is not
+  exposed (the temp folder is kept for a rebuild). `ignore_words` and `-mc` are
+  settings; the two stock-phrase options are settings too, with `t` at the confirm step.
+- A run still transcribes every audio file in the session folder, not only the ones
+  chosen in this run, and the list in the app shows both.
 - The picker lists only folders and audio files. A Craig `.zip` has to be unpacked first.
 
-## Changes to the pinned `legacy/transcribe.sh`
+## The stock-phrase rule
 
-The first and so far only one: a stock-phrase rule. Whisper invents "Thank you." on
-a silent stretch of a track, one per 30 s window, and the collapse step then joins
-the repeats into one long line. The default filter only drops whole lines equal to
-`you silence um uh ah like right well`, so these stayed in.
+Added in this repository, first to the pinned copy of `transcribe.sh` and now in Rust.
+Whisper invents "Thank you." on a silent stretch of a track, one per 30 s window, and
+the collapse step then joins the repeats into one long line. The default filter only
+drops whole lines equal to `you silence um uh ah like right well`, so these stayed in.
 
 In one real session (five tracks, 90 minutes) there were 136 such lines in the merged
 file, 133 of them on the four player tracks and 3 on the GM track, which talks most.
@@ -172,8 +209,8 @@ Limits:
 - A real "Thank you." that follows a run of invented ones with nothing between is
   collapsed into the run and dropped with it.
 - A real one that whisper stretched over a whole window is dropped.
-- `--stock-phrases ""` turns the rule off; `--stock-min-seconds N` changes the length.
-  The TUI does not pass either yet.
+- `stock_phrases` set to `off` turns the rule off; `stock_min_seconds` changes the
+  length. Both are settings, and `t` at the confirmation turns it off for one run.
 
 Tried and rejected: whisper.cpp `--vad`. It removed the invented lines and cut the run
 time by 46%, but it stitches a speaker's bursts of speech together and stamps the

@@ -1,0 +1,17 @@
+speaker	start	end	text
+GM	0	4000	you The Cinder Road runs out at the gates.
+Mara_Quill	2000	3000	I step forward.
+plain	3000	4000	Hello there.
+GM	4000	6000	Um.
+Tomas Ink	4500	6500	I keep my hand near the sword.
+GM	6000	9500	Roll to see what you notice.
+Tomas Ink	7000	9000	Near it.
+plain	10000	11000	...
+GM	12000	13000	Go ahead.
+Mara_Quill	12000	17000	Of course. Right? WELL, Well then, I do.
+GM	51000	90000	Okay then. We'll be right back.
+Mara_Quill	60000	61000	Thank you.
+GM	100000	145000	Café ñandú — it's "quoted".  tab\there line1\nline2 back\\slash
+Mara_Quill	3000000	3001000	An hour in.
+GM	3725000	90001000	Late in the evening. Past a day.
+Tomas Ink	90000500	90001500	After all that.

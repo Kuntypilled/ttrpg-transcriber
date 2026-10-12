@@ -1,8 +1,9 @@
 //! Audio files and who is speaking on them (PORTING.md sections 4.5 and 7.3).
 //!
 //! PORTING.md asks for one speaker-resolution function used by both the pipeline
-//! and the UI. The pipeline is still `legacy/transcribe.sh`, so this function is
-//! checked against that script's output by `tests/job.rs`.
+//! and the UI. The transcription run ([`crate::transcribe`]) and the screen both call
+//! it, and `tests/job.rs` checks the labels it gives against the original script's
+//! output.
 
 use std::cmp::Ordering;
 use std::path::Path;
@@ -31,11 +32,15 @@ pub fn discord_stem(file_name: &str) -> String {
     base.split_once('-').map_or(base, |(_, rest)| rest).to_string()
 }
 
-/// What `transcribe.sh` calls a track that `discord_names` does not resolve: the
+/// What the original `transcribe.sh` called a track that `discord_names` does not resolve: the
 /// name from `N-name_M.ext` when the file name has that shape, else the whole
 /// base name.
 pub fn fallback_label(file_name: &str) -> String {
-    let base = strip_extension(file_name);
+    fallback_label_of_base(strip_extension(file_name))
+}
+
+/// [`fallback_label`] for a name that has no extension to remove (the saved whisper files).
+pub fn fallback_label_of_base(base: &str) -> String {
     let named = || -> Option<&str> {
         let (num, rest) = base.split_once('-')?;
         if num.is_empty() || !num.bytes().all(|b| b.is_ascii_digit()) {
@@ -72,7 +77,7 @@ impl Speaker {
         !matches!(self, Speaker::Unknown { .. })
     }
 
-    /// The speaker label `transcribe.sh` writes into `transcript.md`.
+    /// The speaker label written into `transcript.md`.
     pub fn label(&self) -> String {
         match self {
             Speaker::Character { character, .. } => character.clone(),
@@ -82,22 +87,49 @@ impl Speaker {
     }
 }
 
-/// Resolve one audio file name against the campaign.
-pub fn resolve_speaker(campaign: &Campaign, file_name: &str) -> Speaker {
-    let stem = discord_stem(file_name);
-    match campaign.discord_names().get(&stem) {
-        Some(e) if e.character.as_deref().is_some_and(|c| !c.is_empty()) => Speaker::Character {
-            character: e.character.clone().unwrap_or_default(),
+/// The `discord_names` key for a name that has no extension to remove.
+pub fn discord_stem_of_base(base: &str) -> String {
+    base.split_once('-').map_or(base, |(_, rest)| rest).to_string()
+}
+
+/// The character exactly as the alias file spells it. The transcript label is this
+/// string and not the underscore-normalised one the chunker uses (PORTING.md 4.5).
+fn raw_character(campaign: &Campaign, stem: &str) -> Option<String> {
+    let entry = campaign.data().get("discord_names")?.get(stem)?;
+    match entry.get("character")? {
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+fn resolve_stem(campaign: &Campaign, stem: String, fallback: impl FnOnce() -> String) -> Speaker {
+    let names = campaign.discord_names();
+    match (names.get(&stem), raw_character(campaign, &stem)) {
+        (Some(e), Some(character)) => Speaker::Character {
+            character,
             player: e.player.clone(),
         },
-        Some(e) if e.role.as_deref() == Some("GM") => Speaker::Gm {
+        (Some(e), None) if e.role.as_deref() == Some("GM") => Speaker::Gm {
             player: e.player.clone(),
         },
         _ => Speaker::Unknown {
             stem,
-            label: fallback_label(file_name),
+            label: fallback(),
         },
     }
+}
+
+/// Resolve one audio file name against the campaign.
+pub fn resolve_speaker(campaign: &Campaign, file_name: &str) -> Speaker {
+    resolve_stem(campaign, discord_stem(file_name), || fallback_label(file_name))
+}
+
+/// [`resolve_speaker`] for a name without an extension, as the saved whisper files have.
+/// The original removed an "extension" from these anyway, which cut a dotted Discord
+/// name in two.
+pub fn resolve_base(campaign: &Campaign, base: &str) -> Speaker {
+    resolve_stem(campaign, discord_stem_of_base(base), || fallback_label_of_base(base))
 }
 
 /// Natural order: digit runs compare as numbers, everything else case-insensitively,

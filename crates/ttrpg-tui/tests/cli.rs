@@ -209,19 +209,24 @@ fn check_names_what_is_missing_exits_1_and_creates_nothing() {
     assert_eq!(out.status.code(), Some(1));
     let stdout = text(&out.stdout);
     for want in [
-        "[MISSING] bash",
         "[MISSING] ffmpeg",
-        "[MISSING] jq",
+        "[MISSING] whisper-cli",
         "[MISSING] whisper model",
-        "Missing: bash, python3, ffmpeg, jq",
+        "Missing: ffmpeg, whisper-cli, whisper model",
     ] {
         assert!(stdout.contains(want), "missing {want:?} in:\n{stdout}");
     }
-    assert!(stdout.contains("[OK] legacy scripts"), "{stdout}");
+    for gone in ["bash", "jq", "python3"] {
+        assert!(
+            !stdout.contains(&format!("[MISSING] {gone}")),
+            "{gone} is not needed:\n{stdout}"
+        );
+    }
+    assert!(stdout.contains("[OK] Index helper"), "{stdout}");
     assert_eq!(
         files_under(v.tmp.path()),
         before,
-        "unlike transcribe.sh --check, this creates no files"
+        "unlike the old transcribe.sh --check, this creates no files"
     );
 }
 
@@ -231,7 +236,7 @@ fn check_passes_when_the_tools_are_there() {
     let v = Vault::new();
     let bin = v.tmp.path().join("bin");
     fs::create_dir_all(&bin).unwrap();
-    for t in ["bash", "python3", "ffmpeg", "jq", "whisper-cli"] {
+    for t in ["ffmpeg", "whisper-cli"] {
         fs::write(bin.join(t), "#!/bin/sh\n").unwrap();
         fs::set_permissions(bin.join(t), fs::Permissions::from_mode(0o755)).unwrap();
     }

@@ -1,7 +1,7 @@
 //! The whole app, driven the way a person drives it: keys and clicks in, screen state
-//! out. The job is the real `legacy/transcribe.sh` with real `ffmpeg` and `jq`, and a
-//! stub `whisper-cli`. Tracks are one-second tones with invented names. Needs bash,
-//! python3, ffmpeg and jq; without them each test prints SKIPPED and passes.
+//! out. The job is the real Rust runner with real `ffmpeg`, a stub `whisper-cli` and a stub
+//! stand-in for the Python that has ChromaDB. Tracks are one-second tones with invented
+//! names. Needs bash and ffmpeg; without them each test prints SKIPPED and passes.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -33,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     *) wav="$1"; shift ;;
   esac
 done
+echo "[00:00:00.000 --> 00:00:00.900]   you"
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
 if [[ -n "${STUB_FAIL_MATCH:-}" && "$wav" == *"$STUB_FAIL_MATCH"* ]]; then exit 3; fi
 if [[ -n "${STUB_THANKS:-}" ]]; then
@@ -54,8 +55,8 @@ cat > "${of}.json" <<'J'
 J
 "#;
 
-/// Runs the real Python for the chunker and the alias report, and stands in for the
-/// Python that has ChromaDB.
+/// Stands in for the Python that has ChromaDB. It is the only thing the program still runs
+/// Python for, so any other call fails the test.
 const FAKE_PYTHON: &str = r#"#!/usr/bin/env bash
 case "$1" in
   *chroma_memory.py)
@@ -66,20 +67,20 @@ case "$1" in
     fi
     echo "Upserted 2 chunks into /fake/db. Collection now holds 5."
     ;;
-  *) exec python3 "$@" ;;
+  *) echo "unexpected python call: $*" >&2; exit 2 ;;
 esac
 "#;
 
 macro_rules! require_tools {
     () => {
-        let present = ["bash", "python3", "ffmpeg", "jq"].iter().all(|t| {
+        let present = ["bash", "ffmpeg"].iter().all(|t| {
             Command::new("sh")
                 .args(["-c", &format!("command -v {t}")])
                 .output()
                 .is_ok_and(|o| o.status.success())
         });
         if !present {
-            eprintln!("SKIPPED: bash, python3, ffmpeg and jq are needed");
+            eprintln!("SKIPPED: bash and ffmpeg are needed");
             return;
         }
     };
@@ -1128,4 +1129,161 @@ fn x_cancels_indexing_and_the_app_says_nothing_was_added() {
     assert!(r.cancelled);
     assert!(rig.app.status.text.contains("cancelled") && rig.app.status.text.contains("Nothing was added"));
     assert_eq!(rig.app.status.kind, StatusKind::Warn);
+}
+
+#[test]
+fn the_bar_says_how_far_through_the_current_track_whisper_is() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_SLEEP", "26.1")]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    // The stub prints a segment ending at 0.9 s of a 1 s track, then sleeps.
+    rig.pump_until("the in-track percentage", |a| a.tracker.label().contains("90%"));
+    let screen = rig.draw();
+    assert!(screen.contains("File 1 / 1: 1-gmperson.flac  90%"), "{screen}");
+    rig.press('x');
+    rig.pump_until("the job to stop", |a| !a.running());
+}
+
+#[test]
+fn transcribe_all_again_is_offered_at_the_confirm_step_and_lasts_one_run() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.five_tracks();
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    rig.pump_until("the first run", |a| !a.running());
+    assert!(rig.app.report.as_ref().unwrap().ok());
+
+    rig.press('s');
+    let screen = rig.draw();
+    for want in [
+        "Nothing to move. 5 file(s) are already in:",
+        "Tracks that were already transcribed are skipped.",
+        "[F] Transcribe all again",
+    ] {
+        assert!(screen.contains(want), "missing {want:?}:\n{screen}");
+    }
+    // F, or a click on the button, flips it.
+    rig.press('F');
+    let screen = rig.draw();
+    assert!(
+        screen.contains("Every track is transcribed again.") && screen.contains("[F] Skip finished tracks"),
+        "{screen}"
+    );
+    rig.press('F');
+    assert!(rig.draw().contains("[F] Transcribe all again"));
+    let btn = rig.app.hit.confirm_force;
+    assert!(btn.width > 0);
+    rig.click(btn.x + 1, btn.y);
+    assert!(rig.draw().contains("[F] Skip finished tracks"));
+
+    rig.app.on_key(key(KeyCode::Enter));
+    rig.pump_until("the second run", |a| !a.running());
+    let again = rig.app.report.clone().unwrap();
+    assert_eq!((again.succeeded.len(), again.skipped.len()), (5, 0), "{again:?}");
+
+    // The flip lasted one run.
+    rig.press('s');
+    assert!(rig.draw().contains("[F] Transcribe all again"));
+    rig.app.on_key(key(KeyCode::Esc));
+}
+
+#[test]
+fn rebuild_is_off_until_there_is_saved_output_and_says_why() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    assert!(!rig.app.enabled(Action::Reprocess));
+    rig.press('p');
+    assert!(rig.app.modal.is_none());
+    assert_eq!(rig.app.status.kind, StatusKind::Warn);
+    assert!(
+        rig.app.status.text.contains("No saved whisper output"),
+        "{}",
+        rig.app.status.text
+    );
+}
+
+#[test]
+fn rebuild_rewrites_the_transcript_from_saved_output_with_no_tools_and_no_audio() {
+    require_tools!();
+    let mut rig = Rig::new(&[("STUB_THANKS", "1")]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    rig.pump_until("the first run", |a| !a.running());
+    let first = rig.app.report.clone().unwrap();
+    let path = first.transcript_md.clone().unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap().matches("Thank you.").count(), 1);
+    assert!(rig.app.enabled(Action::Reprocess));
+
+    // The audio folder is emptied and whisper is gone: a rebuild needs neither.
+    fs::remove_dir_all(rig.app.session_paths().unwrap().audio_dir).unwrap();
+    rig.env.insert("GM_WHISPER_BIN".into(), "/no/such/whisper-cli".into());
+    rig.restart();
+    assert_eq!(rig.app.session, Some(2), "a fresh start offers the next session");
+    rig.press('n');
+    rig.press('1');
+    rig.app.on_key(key(KeyCode::Enter));
+    assert_eq!(rig.app.session, Some(1));
+    assert!(!rig.app.preflight.ok(), "transcribing would be refused");
+    assert!(rig.app.enabled(Action::Reprocess), "rebuilding is not");
+
+    rig.press('p');
+    assert!(matches!(rig.app.modal, Some(Modal::Confirm(_))));
+    let screen = rig.draw();
+    for want in [
+        "Rebuild the transcript?",
+        "Rebuilds merged_transcript.tsv",
+        "saved in archive/",
+        "whisper does not run again",
+        "transcript.md is rewritten",
+        "[Enter] Rebuild",
+        "Invented lines",
+        "[t] Keep invented lines",
+    ] {
+        assert!(screen.contains(want), "missing {want:?}:\n{screen}");
+    }
+    assert!(
+        !screen.contains("[F]"),
+        "transcribing again means nothing here:\n{screen}"
+    );
+    rig.press('F');
+    assert!(!rig.draw().contains("Every track is transcribed again"));
+
+    // Turn the rule off for this rebuild: the dropped line comes back.
+    rig.press('t');
+    rig.app.on_key(key(KeyCode::Enter));
+    assert!(rig.app.running());
+    rig.pump_until("the rebuild", |a| !a.running());
+    let report = rig.app.report.clone().unwrap();
+    assert!(report.ok() && report.rebuilt, "{report:?}");
+    assert_eq!(
+        report.headline(),
+        "Rebuilt the transcript from the saved whisper output."
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap().matches("Thank you.").count(), 2);
+    assert_eq!(rig.app.tab, Tab::Transcript);
+    assert_eq!(rig.app.status.kind, StatusKind::Ok);
+    assert_eq!(
+        rig.app.status.text,
+        "Rebuilt the transcript from the saved whisper output. transcript.md is in the Transcript tab."
+    );
+}
+
+#[test]
+fn escape_at_the_rebuild_step_changes_nothing() {
+    require_tools!();
+    let mut rig = Rig::new(&[]);
+    rig.tone("1-gmperson.flac");
+    rig.choose_all_in_downloads();
+    rig.start_and_confirm();
+    rig.pump_until("the first run", |a| !a.running());
+    let path = rig.app.report.clone().unwrap().transcript_md.unwrap();
+    fs::write(&path, "my hand edits").unwrap();
+    rig.press('p');
+    rig.app.on_key(key(KeyCode::Esc));
+    assert!(rig.app.modal.is_none() && !rig.app.running());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "my hand edits");
 }

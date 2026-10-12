@@ -1,0 +1,59 @@
+{
+  "campaign": "Report fixture",
+  "system": "daggerheart",
+  "names": [
+    "Marrow Hall",
+    "Cinder Road",
+    "Kestrel Vane",
+    "Thornwake",
+    "Emberfall",
+    "Wern",
+    "Dunwell"
+  ],
+  "aliases": {
+    "Vashti Corrow": [
+      "Vashtee"
+    ],
+    "Marrow Hall": [
+      "Marro Hall"
+    ]
+  },
+  "review_only": {
+    "Kestrel Vane": [
+      "kestrel vain"
+    ]
+  },
+  "pc_nicknames": {
+    "Vashti_Corrow": [
+      "Vash",
+      "Vashi"
+    ]
+  },
+  "players": {
+    "Vashti_Corrow": "Morgan",
+    "Bram_Ollander": "Sam",
+    "Nell": "Riley"
+  },
+  "speaker_map": [
+    {
+      "match": "gm",
+      "player": "Casey",
+      "character": null
+    },
+    {
+      "match": "vashti",
+      "player": "Morgan",
+      "character": "Vashti_Corrow"
+    },
+    {
+      "match": "bram",
+      "player": "Sam",
+      "character": "Bram_Ollander"
+    },
+    {
+      "match": "nell",
+      "player": "Riley",
+      "character": "Nell"
+    }
+  ]
+}

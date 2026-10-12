@@ -1,0 +1,74 @@
+{
+ "systeminfo": "invented",
+ "model": {
+  "type": "stub"
+ },
+ "transcription": [
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 4500,
+    "to": 6500
+   },
+   "text": " I keep my hand near the sword."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 7000,
+    "to": 8000
+   },
+   "text": " Near it."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 8000,
+    "to": 9000
+   },
+   "text": " near it."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 95000,
+    "to": 125000
+   },
+   "text": " Thank you."
+  },
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:00,000"
+   },
+   "offsets": {
+    "from": 126000,
+    "to": 127000
+   },
+   "text": " Okay."
+  },
+  {
+   "timestamps": {
+    "from": "x",
+    "to": "x"
+   },
+   "offsets": {
+    "from": 90000500,
+    "to": 90001500
+   },
+   "text": " After all that."
+  }
+ ]
+}

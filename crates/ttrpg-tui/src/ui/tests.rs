@@ -141,7 +141,7 @@ fn cell_has(buf: &Buffer, x: u16, y: u16, m: Modifier) -> bool {
 #[test]
 fn idle_screen_shows_the_three_panes_and_the_buttons() {
     let mut w = world(true);
-    let screen = render(&mut w.app, 130, 32);
+    let screen = render(&mut w.app, 140, 32);
     for want in [
         "SESSION TRANSCRIBER",
         "Alpha Run · daggerheart · emberfall",
@@ -157,6 +157,7 @@ fn idle_screen_shows_the_three_panes_and_the_buttons() {
         "Ready",
         "[f] Files",
         "[s] Start",
+        "[p] Rebuild",
         "[x] Cancel",
         "[o] Open folder",
         "[c] Clear files",
@@ -303,7 +304,6 @@ fn a_clean_finish_is_complete_and_green() {
         session: 1,
         tracks_found: Some(1),
         succeeded: vec!["1-gmperson.flac".into()],
-        exit_code: Some(0),
         postprocess_done: true,
         elapsed: Duration::from_secs(131),
         ..Default::default()
@@ -328,7 +328,6 @@ fn a_failed_track_turns_the_bar_red_and_is_named_in_the_log() {
         tracks_found: Some(5),
         succeeded: vec!["a".into(), "b".into(), "c".into(), "d".into()],
         failed: vec![("3-rivertwo.flac".into(), "whisper-cli exited non-zero".into())],
-        exit_code: Some(0),
         postprocess_done: true,
         ..Default::default()
     })))
@@ -362,7 +361,6 @@ fn tracks_show_their_own_outcome_after_a_run_and_the_bar_resets_on_a_new_session
         succeeded: vec!["1-gmperson.flac".into()],
         skipped: vec!["2-riverone.flac".into()],
         failed: vec![("3-late.flac".into(), "whisper-cli exited non-zero".into())],
-        exit_code: Some(0),
         postprocess_done: true,
         ..Default::default()
     })))
@@ -923,7 +921,9 @@ fn the_confirm_dialog_says_move_and_warns_about_replacements_and_unknowns() {
         "MOVE (not copy) 2 file(s) into:",
         "/audio/alpha/Session 1",
         "The originals disappear",
-        "replace ones with the same name already there: 1-gmperson.flac",
+        "replace ones with the same name already there",
+        "transcribed again",
+        "1-gmperson.flac",
         "1 track(s) have no speaker in discord_names",
         "[Enter] Move and start",
         "[Esc] Cancel",
@@ -1018,9 +1018,8 @@ fn nothing_panics_at_any_size_in_any_state() {
                     )))),
                     4 => {
                         let s = &w.app.settings;
-                        let legacy = ttrpg_core::legacy::locate(s).unwrap();
                         let c = w.app.campaign().unwrap();
-                        let plan = ttrpg_core::plan_job(s, c, 1, &w.app.chosen, &legacy).unwrap();
+                        let plan = ttrpg_core::plan_job(s, c, 1, &w.app.chosen).unwrap();
                         Some(Modal::Confirm(Box::new(plan)))
                     }
                     _ => None,

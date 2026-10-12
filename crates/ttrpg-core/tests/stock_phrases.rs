@@ -1,37 +1,12 @@
-//! The stock-phrase rule in `legacy/transcribe.sh`: whisper invents "Thank you."
-//! on a silent stretch of a track, one per 30 s window, and the collapse step
-//! stretches the repeats into one long line. The rule drops a line that is exactly
-//! a stock phrase only when it lasts 20 s or more. These tests replay hand-made
-//! whisper JSON (`--post-process-only`), so no audio and no whisper are needed,
-//! only bash, python3 and jq; without them each test prints SKIPPED and passes.
+//! The stock-phrase rule: whisper invents "Thank you." on a silent stretch of a track, one
+//! per 30 s window, and the collapse step stretches the repeats into one long line. The
+//! rule drops a line that is exactly a stock phrase only when it lasts 20 s or more. These
+//! tests replay a hand-made whisper output through the post-processing, so no audio and
+//! no whisper are needed. (`pipeline.rs` compares the same stage with the original
+//! script's output byte for byte; this file is about the rule's edges.)
 
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-
-use tempfile::TempDir;
-
-fn tools_present() -> bool {
-    ["bash", "python3", "jq"].iter().all(|t| {
-        Command::new("sh")
-            .args(["-c", &format!("command -v {t}")])
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-macro_rules! require_tools {
-    () => {
-        if !tools_present() {
-            eprintln!("SKIPPED: bash, python3 and jq are needed");
-            return;
-        }
-    };
-}
-
-fn script() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../legacy/transcribe.sh")
-}
+use ttrpg_core::StockRule;
+use ttrpg_core::pipeline::{PostOptions, Processed, RawSegment, process_segments, segments_from_json};
 
 /// One track, `1-mara_0`, as whisper would have archived it. Times are in ms.
 /// Each entry is (from, to, text, kept by default).
@@ -61,131 +36,85 @@ const TRACK: &[(u64, u64, &str, bool)] = &[
     (222_000, 252_000, " Thanks for watching.", true),
 ];
 
-fn session() -> TempDir {
-    let dir = TempDir::new().unwrap();
-    fs::create_dir_all(dir.path().join("archive")).unwrap();
-    fs::create_dir_all(dir.path().join("home")).unwrap();
-    let segments: Vec<String> = TRACK
+fn segments() -> Vec<RawSegment> {
+    let entries: Vec<String> = TRACK
         .iter()
         .map(|(from, to, text, _)| format!(r#"{{"offsets":{{"from":{from},"to":{to}}},"text":"{text}"}}"#))
         .collect();
-    fs::write(
-        dir.path().join("archive/1-mara_0.whisper_original.json"),
-        format!(r#"{{"transcription":[{}]}}"#, segments.join(",")),
+    segments_from_json(&format!(r#"{{"transcription":[{}]}}"#, entries.join(","))).unwrap()
+}
+
+fn replay(stock: StockRule) -> Processed {
+    process_segments(
+        "mara",
+        &segments(),
+        &PostOptions {
+            stock,
+            ..PostOptions::default()
+        },
     )
-    .unwrap();
-    dir
 }
 
-fn replay(dir: &Path, extra: &[&str]) -> Output {
-    Command::new("bash")
-        .arg(script())
-        .args(["-p", "-o"])
-        .arg(dir)
-        .arg("--temp-dir")
-        .arg(dir.join("temp"))
-        .args(extra)
-        .env_clear()
-        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-        .env("HOME", dir.join("home"))
-        .env("XDG_CONFIG_HOME", dir.join("home/.config"))
-        .output()
-        .unwrap()
+fn rule(phrases: &[&str], min_seconds: u32) -> StockRule {
+    StockRule {
+        phrases: phrases.iter().map(|p| (*p).to_string()).collect(),
+        min_seconds,
+        set_by: None,
+    }
 }
 
-/// The merged transcript as (start_ms, end_ms, text) rows.
-fn merged(dir: &Path) -> Vec<(u64, u64, String)> {
-    fs::read_to_string(dir.join("merged_transcript.tsv"))
-        .unwrap()
-        .lines()
-        .skip(1)
-        .map(|l| {
-            let f: Vec<&str> = l.split('\t').collect();
-            assert_eq!(f[0], "mara");
-            (f[1].parse().unwrap(), f[2].parse().unwrap(), f[3].to_string())
+/// The kept rows as (start_ms, end_ms, text).
+fn kept(p: &Processed) -> Vec<(i64, i64, String)> {
+    p.rows
+        .iter()
+        .map(|r| {
+            assert_eq!(r.speaker, "mara");
+            (r.start, r.end, r.text.clone())
         })
         .collect()
 }
 
-fn processed_log_line(dir: &Path) -> String {
-    fs::read_to_string(dir.join("transcription_log.csv"))
-        .unwrap()
-        .lines()
-        .rfind(|l| l.contains("Processed:"))
-        .unwrap()
-        .to_string()
-}
-
 #[test]
 fn by_default_only_long_stock_lines_are_dropped_and_nothing_else_moves() {
-    require_tools!();
-    let dir = session();
-    let out = replay(dir.path(), &[]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-
-    let rows = merged(dir.path());
-    let want: Vec<(u64, u64, String)> = TRACK
+    let out = replay(StockRule::default());
+    let want: Vec<(i64, i64, String)> = TRACK
         .iter()
         .filter(|(_, _, _, kept)| *kept)
-        .map(|(a, b, t, _)| (*a, *b, t.trim().to_string()))
+        .map(|(a, b, t, _)| (*a as i64, *b as i64, t.trim().to_string()))
         .collect();
-    assert_eq!(rows, want, "kept lines keep their own start and end times");
+    assert_eq!(kept(&out), want, "kept lines keep their own start and end times");
 
     // The 60 s run counts once: it was one line by then.
-    let line = processed_log_line(dir.path());
-    assert!(
-        line.ends_with("filtered: 0, collapsed: 1, stock phrases dropped: 4"),
-        "{line}"
+    assert_eq!(
+        out.log_line("1-mara_0.processed.tsv"),
+        "Processed: 1-mara_0.processed.tsv — filtered: 0, collapsed: 1, stock phrases dropped: 4"
     );
-    let md = fs::read_to_string(dir.path().join("transcript.md")).unwrap();
-    assert!(md.contains("Thank you.") && md.contains("Thank you very much."));
-    assert!(!md.contains("THANK YOU") && !md.contains("right back"));
+    let text: Vec<String> = kept(&out).into_iter().map(|r| r.2).collect();
+    assert!(text.contains(&"Thank you.".to_string()) && text.contains(&"Thank you very much.".to_string()));
+    assert!(!text.iter().any(|t| t.contains("THANK YOU") || t.contains("right back")));
 }
 
 #[test]
 fn an_empty_list_turns_the_rule_off_and_the_log_line_is_the_original_one() {
-    require_tools!();
-    let dir = session();
-    let out = replay(dir.path(), &["--stock-phrases", ""]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = replay(StockRule::default().off());
     // Seventeen lines in, the two silent windows collapsed into one.
-    assert_eq!(merged(dir.path()).len(), TRACK.len() - 1);
-    let line = processed_log_line(dir.path());
-    assert!(line.ends_with("filtered: 0, collapsed: 1"), "{line}");
+    assert_eq!(out.rows.len(), TRACK.len() - 1);
+    assert_eq!(
+        out.log_line("1-mara_0.processed.tsv"),
+        "Processed: 1-mara_0.processed.tsv — filtered: 0, collapsed: 1"
+    );
 }
 
 #[test]
 fn the_list_and_the_length_can_be_changed() {
-    require_tools!();
-    let dir = session();
-
-    let out = replay(
-        dir.path(),
-        &["--stock-phrases", "thanks for watching,thank you very much"],
-    );
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let texts: Vec<String> = merged(dir.path()).into_iter().map(|r| r.2).collect();
+    let out = replay(rule(&["thanks for watching", "thank you very much"], 20));
+    let texts: Vec<String> = kept(&out).into_iter().map(|r| r.2).collect();
     assert!(!texts.iter().any(|t| t == "Thanks for watching."));
     assert!(!texts.iter().any(|t| t == "Thank you very much."));
     assert!(texts.iter().any(|t| t == "THANK YOU!"), "not on this list");
 
     // Dropping from 1 s up also takes the 1.5 s one and the 19.999 s one.
-    let out = replay(dir.path(), &["--stock-min-seconds", "1"]);
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let thanks = merged(dir.path()).into_iter().filter(|r| r.2 == "Thank you.").count();
+    let out = replay(rule(&["thank you", "we'll be right back"], 1));
+    let thanks = kept(&out).into_iter().filter(|r| r.2 == "Thank you.").count();
     assert_eq!(thanks, 0);
-}
-
-#[test]
-fn a_bad_length_is_refused_before_anything_runs() {
-    require_tools!();
-    let dir = session();
-    let out = replay(dir.path(), &["--stock-min-seconds", "soon"]);
-    assert!(!out.status.success());
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("--stock-min-seconds must be a whole number"),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(!dir.path().join("merged_transcript.tsv").exists());
 }

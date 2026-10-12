@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 indexmap = "2.14.2"
+regex = "1.13.1"
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 thiserror = "2.0.21"
 

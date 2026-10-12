@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Stand-in for whisper-cli, used only by scripts/demo.sh.
 
-Understands the flags transcribe.sh passes (-of PREFIX, -oj, -m, -l, --prompt, -dev,
--mc and the input wav), waits a moment so the progress bar has something to show,
-then prints each segment to stdout the way whisper.cpp does (the app shows those
-lines dimmed) and writes canned dialogue for the track as whisper.cpp -oj JSON.
-Every name and line is invented. A "Thank you." that lasts 30 seconds is what
-whisper makes up on a silent stretch; the script drops it. A short one is kept.
+Understands the flags the program passes (-of PREFIX, -oj, -m, -l, --prompt, -dev,
+-mc and the input wav), then prints each segment to stdout the way whisper.cpp does,
+spread over the pretend work time so the progress bar moves through the track (the
+app shows those lines dimmed), and writes canned dialogue for the track as whisper.cpp
+-oj JSON. Every name and line is invented. A "Thank you." that lasts 30 seconds is
+what whisper makes up on a silent stretch; the program drops it. A short one is kept.
 
     DEMO_DELAY   seconds of pretend work per track (default 2.5)
     a file name containing "fail" makes it exit with an error, to show a failed track
@@ -39,8 +39,9 @@ name = os.path.basename(wav)
 m = re.match(r"(\d+)-", name)
 track = int(m.group(1)) if m else 1
 
-time.sleep(float(os.environ.get("DEMO_DELAY", "2.5")) + 0.4 * (track % 3))
+delay = float(os.environ.get("DEMO_DELAY", "2.5")) + 0.4 * (track % 3)
 if "fail" in name:
+    time.sleep(delay)
     sys.stderr.write("fake-whisper-cli: pretending the model fell over\n")
     sys.exit(3)
 
@@ -93,7 +94,9 @@ def stamp(ms):
     return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
 
 segments = []
-for entry in SCENE.get(track, [(1000, "Testing, testing.")]):
+scene = SCENE.get(track, [(1000, "Testing, testing.")])
+for entry in scene:
+    time.sleep(delay / len(scene))
     start, text = entry[0], entry[1]
     end = start + (entry[2] if len(entry) > 2 else 2500)
     segments.append({"offsets": {"from": start, "to": end}, "text": " " + text})

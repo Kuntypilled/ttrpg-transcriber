@@ -1,7 +1,7 @@
-//! `transcription_state.csv`, the per-file record `transcribe.sh` appends to
-//! (PORTING.md section 4.2). The script writes every field in double quotes and
-//! does not escape quotes inside them, so this reads it with the same assumption
-//! rather than as general CSV.
+//! `transcription_state.csv`, the per-file record a run appends to (PORTING.md section
+//! 4.2). Every field is in double quotes and quotes inside them are not escaped (the
+//! original wrote them raw; the Rust run turns them into single quotes), so this reads
+//! it with that assumption rather than as general CSV.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateRow {

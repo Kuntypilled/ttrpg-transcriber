@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Stand-in for whisper-cli: reads the arguments it is given the way whisper-cli
+# does, prints a few segment lines, and writes canned JSON to <of>.json. The
+# text depends on the track so merges interleave and ties between tracks happen.
+#
+#   STUB_SLEEP=n         wait n seconds first (for cancel tests)
+#   STUB_FAIL_MATCH=txt  exit 3 when the audio path contains txt
+#   STUB_NO_JSON=1       exit 0 without writing the JSON
+#   STUB_DUP=1           print a second segment line ending at the same place
+#   STUB_ARGS_FILE=path  write the arguments it received, one per line
+of=""; wav=""
+args=("$@")
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -of) of="$2"; shift 2 ;;
+    -m|-l|--prompt|-dev|-mc) shift 2 ;;
+    -oj) shift ;;
+    *) wav="$1"; shift ;;
+  esac
+done
+echo "[00:00:00.000 --> 00:00:00.900]   you"
+[[ -n "${STUB_DUP:-}" ]] && echo "[00:00:00.500 --> 00:00:00.900]   you"
+echo "[00:00:01.000 --> 00:00:05.000]   The lantern is lit."
+[[ -n "${STUB_ARGS_FILE:-}" ]] && printf '%s\n' "${args[@]}" > "$STUB_ARGS_FILE"
+[[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
+if [[ -n "${STUB_FAIL_MATCH:-}" && "$wav" == *"$STUB_FAIL_MATCH"* ]]; then
+  echo "stub: refusing $wav" >&2
+  exit 3
+fi
+[[ -n "${STUB_NO_JSON:-}" ]] && exit 0
+base="$(basename "$of")"
+safe="${base//\"/}"
+n="${base%%-*}"
+[[ "$n" =~ ^[0-9]+$ ]] || n=0
+start=$(( 6000 + n * 1500 ))
+extra=""
+if [[ "$base" == *rivertwo* ]]; then
+  extra=',
+ {"offsets":{"from":20000,"to":50000},"text":" Thank you."},
+ {"offsets":{"from":51000,"to":52000},"text":" We go on."},
+ {"offsets":{"from":53000,"to":54500},"text":" Thank you."}'
+fi
+cat > "${of}.json" <<J
+{"transcription":[
+ {"offsets":{"from":0,"to":900},"text":" you"},
+ {"offsets":{"from":1000,"to":2000},"text":" The lantern is lit."},
+ {"offsets":{"from":2000,"to":3000},"text":" the lantern is lit."},
+ {"offsets":{"from":4000,"to":5000},"text":" It’s the Cinder Road."},
+ {"offsets":{"from":${start},"to":$(( start + 1200 ))},"text":" This is track ${safe}."}${extra}
+]}
+J

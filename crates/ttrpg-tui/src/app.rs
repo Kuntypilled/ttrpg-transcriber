@@ -19,7 +19,8 @@ use ttrpg_core::audio::{Speaker, list_audio_files, natural_cmp, resolve_speaker}
 use ttrpg_core::preflight::{PreflightReport, preflight};
 use ttrpg_core::{
     Campaign, IndexKind, IndexReport, JobPlan, PipelineEvent, RunReport, SessionPaths, Settings, StockRule, Tracker,
-    execute, execute_index, legacy, list_campaigns, plan_index, plan_job, save_speakers,
+    execute, execute_index, has_saved_output, legacy, list_campaigns, plan_index, plan_job, plan_reprocess,
+    save_speakers,
 };
 
 use crate::picker::{FilePicker, Outcome};
@@ -90,6 +91,7 @@ pub enum Action {
     ChooseFiles,
     Resolve,
     Start,
+    Reprocess,
     Cancel,
     Index,
     Report,
@@ -174,6 +176,7 @@ pub struct Hit {
     pub confirm_ok: Rect,
     pub confirm_cancel: Rect,
     pub confirm_stock: Rect,
+    pub confirm_force: Rect,
     /// Where each field of the resolve form is drawn, and its Save and Cancel buttons.
     pub resolve_fields: Vec<(Rect, usize, Col)>,
     pub resolve_save: Rect,
@@ -595,6 +598,9 @@ impl App {
             Action::Start => {
                 idle && self.campaign().is_some() && self.session.is_some_and(|n| n > 0) && !self.tracks.is_empty()
             }
+            Action::Reprocess => {
+                idle && self.campaign().is_some() && self.session.is_some_and(|n| n > 0) && self.has_saved_output()
+            }
             Action::Cancel => !idle,
             Action::OpenFolder => self
                 .session_paths()
@@ -619,6 +625,7 @@ impl App {
         match action {
             Action::ChooseFiles => self.open_picker(),
             Action::Start => self.begin_start(),
+            Action::Reprocess => self.begin_reprocess(),
             Action::Cancel => self.cancel_job(),
             Action::OpenFolder => self.open_folder(),
             Action::ClearFiles => {
@@ -647,6 +654,10 @@ impl App {
             Action::Index | Action::Report if self.campaign().is_none() => "Pick a campaign first.",
             Action::Index | Action::Report => "There is no transcript.md for this session yet.",
             Action::ChooseFiles => "Pick a campaign first.",
+            Action::Reprocess if self.running() => "A job is already running.",
+            Action::Reprocess if self.campaign().is_none() => "Pick a campaign first.",
+            Action::Reprocess if self.session.is_none() => "Set a session number first (n).",
+            Action::Reprocess => "No saved whisper output for this session to rebuild from.",
             Action::Start if self.running() => "A job is already running.",
             Action::Start if self.campaign().is_none() => "Pick a campaign first.",
             Action::Start if self.tracks.is_empty() => "No audio yet. Press f to choose the Craig files.",
@@ -695,14 +706,31 @@ impl App {
         let (Some(camp), Some(session)) = (self.campaign(), self.session) else {
             return;
         };
-        let plan =
-            legacy::locate(&self.settings).and_then(|l| plan_job(&self.settings, camp, session, &self.chosen, &l));
-        match plan {
+        match plan_job(&self.settings, camp, session, &self.chosen) {
             Ok(plan) if plan.track_count() == 0 => {
                 self.set_status(StatusKind::Warn, "No audio yet. Press f to choose the Craig files.");
             }
             Ok(plan) => self.modal = Some(Modal::Confirm(Box::new(plan))),
             Err(e) => self.set_status(StatusKind::Error, e.0),
+        }
+    }
+
+    /// `p`: rebuild the transcripts from the saved whisper output. Needs no tools and no audio.
+    fn begin_reprocess(&mut self) {
+        let (Some(camp), Some(session)) = (self.campaign(), self.session) else {
+            return;
+        };
+        match plan_reprocess(&self.settings, camp, session) {
+            Ok(plan) => self.modal = Some(Modal::Confirm(Box::new(plan))),
+            Err(e) => self.set_status(StatusKind::Error, e.0),
+        }
+    }
+
+    /// Whether the selected session has saved whisper output.
+    pub fn has_saved_output(&self) -> bool {
+        match (self.campaign(), self.session) {
+            (Some(camp), Some(n)) => has_saved_output(&self.settings, camp, n),
+            _ => false,
         }
     }
 
@@ -772,7 +800,7 @@ impl App {
         self.set_status(
             StatusKind::Info,
             match kind {
-                JobKind::Transcribe => "Running. x cancels; the log shows what the script says.",
+                JobKind::Transcribe => "Running. x cancels; the log shows what whisper says.",
                 JobKind::Index => "Indexing. x cancels; the log shows what the helpers say.",
                 JobKind::Report => "Scanning the transcript. x cancels.",
             },
@@ -905,7 +933,11 @@ impl App {
         if ok && has_transcript {
             self.set_tab(Tab::Transcript);
             self.transcript_scroll = 0;
-            self.set_status(kind, format!("{headline}. transcript.md is in the Transcript tab."));
+            let stop = if headline.ends_with('.') { "" } else { "." };
+            self.set_status(
+                kind,
+                format!("{headline}{stop} transcript.md is in the Transcript tab."),
+            );
         } else {
             self.reload_transcript_if_visible();
             self.set_status(kind, headline);
@@ -1065,6 +1097,7 @@ impl App {
             KeyCode::Char('!') => self.modal = Some(Modal::Setup),
             KeyCode::Char('f') => self.do_action(Action::ChooseFiles),
             KeyCode::Char('s') => self.do_action(Action::Start),
+            KeyCode::Char('p') => self.do_action(Action::Reprocess),
             KeyCode::Char('x') => self.do_action(Action::Cancel),
             KeyCode::Char('o') => self.do_action(Action::OpenFolder),
             KeyCode::Char('c') => self.do_action(Action::ClearFiles),
@@ -1155,6 +1188,10 @@ impl App {
                 KeyCode::Enter | KeyCode::Char('y') => self.launch(*plan),
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('q') => {}
                 KeyCode::Char('t') => self.modal = Some(Modal::Confirm(Box::new(self.with_stock_toggled(*plan)))),
+                KeyCode::Char('F') if !plan.reprocess => {
+                    let force = !plan.force;
+                    self.modal = Some(Modal::Confirm(Box::new(plan.with_force(force))));
+                }
                 _ => self.modal = Some(Modal::Confirm(plan)),
             },
             Modal::Picker(mut picker) => match picker.on_key(key) {
@@ -1356,6 +1393,9 @@ impl App {
                     self.launch(*plan);
                 } else if left_click && self.hit.confirm_stock.contains(pos) {
                     self.modal = Some(Modal::Confirm(Box::new(self.with_stock_toggled(*plan))));
+                } else if left_click && !plan.reprocess && self.hit.confirm_force.contains(pos) {
+                    let force = !plan.force;
+                    self.modal = Some(Modal::Confirm(Box::new(plan.with_force(force))));
                 } else if !(left_click && self.hit.confirm_cancel.contains(pos)) {
                     self.modal = Some(Modal::Confirm(plan));
                 }

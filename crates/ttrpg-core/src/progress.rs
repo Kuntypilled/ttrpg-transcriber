@@ -1,48 +1,22 @@
-//! The `PROGRESS:` lines `transcribe.sh` prints (PORTING.md section 4.9) as typed
-//! events, and the progress-bar arithmetic the GUI used.
+//! Progress of a transcription run as typed events (PORTING.md section 4.9; the original
+//! printed them as `PROGRESS:` lines), and the progress-bar arithmetic the GUI used.
 
-/// One machine-readable line from the script.
+/// One step of a run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgressEvent {
-    /// `PROGRESS:start:<N>`: N audio files found.
+    /// N audio files found.
     Start { total: usize },
-    /// `PROGRESS:file:<i>/<N>:<filename>`: starting file i.
+    /// Starting file i.
     FileStart { index: usize, total: usize, name: String },
-    /// `PROGRESS:done:<i>/<N>:<filename>`: file i finished. Also sent for skipped files.
+    /// File i finished. Also sent for skipped files.
     FileDone { index: usize, total: usize, name: String },
-    /// `PROGRESS:complete`: the transcription loop finished.
+    /// The transcription loop finished.
     TranscribeComplete,
-    /// `PROGRESS:postdone`: merge, consolidate and markdown finished.
+    /// Merge, consolidate and markdown finished.
     PostDone,
-}
-
-/// Parse one output line. Anything that is not a well-formed progress line is `None`
-/// and belongs in the log. The file name may itself contain colons.
-pub fn parse_progress_line(line: &str) -> Option<ProgressEvent> {
-    let rest = line.strip_prefix("PROGRESS:")?;
-    let mut parts = rest.splitn(3, ':');
-    let tag = parts.next()?;
-    let position = |s: &str| -> Option<(usize, usize)> {
-        let (i, n) = s.split_once('/')?;
-        Some((i.trim().parse().ok()?, n.trim().parse().ok()?))
-    };
-    match tag {
-        "start" => Some(ProgressEvent::Start {
-            total: parts.next()?.trim().parse().ok()?,
-        }),
-        "file" | "done" => {
-            let (index, total) = position(parts.next()?)?;
-            let name = parts.next().unwrap_or("").to_string();
-            Some(if tag == "file" {
-                ProgressEvent::FileStart { index, total, name }
-            } else {
-                ProgressEvent::FileDone { index, total, name }
-            })
-        }
-        "complete" => Some(ProgressEvent::TranscribeComplete),
-        "postdone" => Some(ProgressEvent::PostDone),
-        _ => None,
-    }
+    /// How far through the current file whisper has got, from its own segment lines.
+    /// The original could not tell.
+    InFile { index: usize, total: usize, permille: u16 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,15 +116,32 @@ impl Tracker {
                 self.fraction = 1.0;
                 self.label = "Complete".into();
             }
+            ProgressEvent::InFile { index, total, permille } => {
+                self.phase = Phase::Transcribing;
+                let f = f64::from(*permille).clamp(0.0, 1000.0) / 1000.0;
+                self.fraction = 0.08 + 0.82 * ((*index as f64 - 1.0) + f) / (*total).max(1) as f64;
+                self.label = format!("File {index} / {total}: {}  {:.0}%", self.name, f * 100.0);
+            }
         }
         self.fraction = self.fraction.clamp(0.0, 1.0);
     }
 }
 
+/// The end time, in milliseconds, of a segment line (see [`is_whisper_segment_line`]).
+pub fn whisper_segment_end_ms(line: &str) -> Option<u64> {
+    if !is_whisper_segment_line(line) {
+        return None;
+    }
+    let b = line.trim_start().as_bytes();
+    // `[hh:mm:ss.mmm --> hh:mm:ss.mmm]`: the end time is bytes 18..30.
+    let n = |r: std::ops::Range<usize>| -> Option<u64> { std::str::from_utf8(&b[r]).ok()?.parse().ok() };
+    Some(n(18..20)? * 3_600_000 + n(21..23)? * 60_000 + n(24..26)? * 1000 + n(27..30)?)
+}
+
 /// True for a segment line whisper-cli prints to stdout while it works:
-/// `[00:00:30.000 --> 00:01:00.000]   Thank you.` The script does not redirect
-/// whisper's stdout, so these reach the log. They are raw, unfiltered output, and
-/// the app shows them dimmed so the script's own lines stand out.
+/// `[00:00:30.000 --> 00:01:00.000]   Thank you.` They reach the log as they come. They
+/// are raw, unfiltered output, and the app shows them dimmed so the run's own lines
+/// stand out.
 pub fn is_whisper_segment_line(line: &str) -> bool {
     // `[hh:mm:ss.mmm --> hh:mm:ss.mmm]`: 31 bytes of fixed shape.
     const SHAPE: &[u8; 31] = b"[dd:dd:dd.ddd --> dd:dd:dd.ddd]";
@@ -165,65 +156,6 @@ pub fn is_whisper_segment_line(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_every_line_the_script_prints() {
-        assert_eq!(
-            parse_progress_line("PROGRESS:start:5"),
-            Some(ProgressEvent::Start { total: 5 })
-        );
-        assert_eq!(
-            parse_progress_line("PROGRESS:file:2/5:2-riverone.flac"),
-            Some(ProgressEvent::FileStart {
-                index: 2,
-                total: 5,
-                name: "2-riverone.flac".into()
-            })
-        );
-        assert_eq!(
-            parse_progress_line("PROGRESS:done:5/5:5-x.flac"),
-            Some(ProgressEvent::FileDone {
-                index: 5,
-                total: 5,
-                name: "5-x.flac".into()
-            })
-        );
-        assert_eq!(
-            parse_progress_line("PROGRESS:complete"),
-            Some(ProgressEvent::TranscribeComplete)
-        );
-        assert_eq!(parse_progress_line("PROGRESS:postdone"), Some(ProgressEvent::PostDone));
-    }
-
-    #[test]
-    fn file_names_may_contain_colons() {
-        assert_eq!(
-            parse_progress_line("PROGRESS:file:1/2:a:b: c.flac"),
-            Some(ProgressEvent::FileStart {
-                index: 1,
-                total: 2,
-                name: "a:b: c.flac".into()
-            })
-        );
-    }
-
-    #[test]
-    fn everything_else_is_log_text() {
-        for line in [
-            "",
-            "hello",
-            "  PROGRESS:start:5",
-            "PROGRESS:",
-            "PROGRESS:bogus",
-            "PROGRESS:start:x",
-            "PROGRESS:file:x/5:a",
-            "PROGRESS:file:2:a",
-            "progress:start:5",
-            "Skipping: PROGRESS:complete",
-        ] {
-            assert_eq!(parse_progress_line(line), None, "{line:?}");
-        }
-    }
 
     #[test]
     fn bar_position_follows_the_gui_mapping() {
@@ -276,6 +208,19 @@ mod tests {
     }
 
     #[test]
+    fn the_end_time_of_a_segment_line_is_read_in_milliseconds() {
+        assert_eq!(
+            whisper_segment_end_ms("[00:00:30.000 --> 00:01:41.250]   x"),
+            Some(101_250)
+        );
+        assert_eq!(
+            whisper_segment_end_ms("  [01:02:03.450 --> 01:02:09.999]"),
+            Some(3_729_999)
+        );
+        assert_eq!(whisper_segment_end_ms("Session folder"), None);
+    }
+
+    #[test]
     fn recognises_whisper_segment_lines_and_nothing_else() {
         for yes in [
             "[00:00:00.000 --> 00:00:30.000]   Thank you.",
@@ -287,7 +232,7 @@ mod tests {
         for no in [
             "",
             "Session folder: /x",
-            "PROGRESS:done:1/5:a.flac",
+            "Done: 1-gmperson.flac in 3s",
             "[00:00:00.000 -> 00:00:30.000] one dash short",
             "[0:00:00.000 --> 00:00:30.000] one digit short",
             "[00:00:00,000 --> 00:00:30,000] comma, not a dot",

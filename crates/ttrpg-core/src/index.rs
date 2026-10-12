@@ -1,10 +1,11 @@
 //! Index to Memory and the alias report (PORTING.md sections 5, 6 and 7.3).
 //!
-//! Both are Python scripts run as subprocesses: the chunker (`transcript_to_chunks.py`)
-//! writes the session's chunk JSONL, and the Chroma helper (`chroma_memory.py`)
-//! embeds and stores it. ChromaDB and sentence-transformers have no practical Rust
-//! equivalent that reads the existing store (PORTING.md section 6), so that half
-//! stays Python for good; which Python is the `python` setting.
+//! The chunker and the alias report run in this program ([`crate::chunker`],
+//! [`crate::alias_report`]). Storing the chunks is the one Python step: the Chroma
+//! helper (`chroma_memory.py`) embeds and stores them. ChromaDB and
+//! sentence-transformers have no practical Rust equivalent that reads the existing
+//! store (PORTING.md section 6), so that half stays Python for good; which Python is
+//! the `python` setting.
 //!
 //! [`plan_index`] checks everything up front. [`execute_index`] runs on its own thread
 //! and reports through the same event channel as the transcription job.
@@ -16,7 +17,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
+use crate::alias_report;
 use crate::campaign::Campaign;
+use crate::chunker;
 use crate::error::CampaignError;
 use crate::job::PipelineEvent;
 use crate::proc::run_streaming;
@@ -62,8 +65,8 @@ pub fn plan_index(
         )));
     }
     let needed: &[&str] = match kind {
-        IndexKind::Index => &["transcript_to_chunks.py", "chroma_memory.py"],
-        IndexKind::Report => &["transcript_to_chunks.py"],
+        IndexKind::Index => &["chroma_memory.py"],
+        IndexKind::Report => &[],
     };
     for script in needed {
         if !Path::new(&scripts.value).join(script).is_file() {
@@ -177,13 +180,6 @@ impl IndexReport {
     }
 }
 
-/// `3 chunks from 14 utterances (session 1); 2 alias rules applied`
-pub fn parse_chunk_summary(line: &str) -> Option<(usize, usize)> {
-    let (chunks, rest) = line.split_once(" chunks from ")?;
-    let (utt, _) = rest.split_once(" utterances")?;
-    Some((chunks.trim().parse().ok()?, utt.trim().parse().ok()?))
-}
-
 /// `Upserted 3 chunks into /db. Collection now holds 7.`
 pub fn parse_upsert_summary(line: &str) -> Option<(usize, usize)> {
     let rest = line.strip_prefix("Upserted ")?;
@@ -243,7 +239,7 @@ fn step(
         &args,
         &plan.env,
         cancel,
-        |line| {
+        |_, line| {
             on_line(&line, report);
             tail.push(line.clone());
             if tail.len() > 12 {
@@ -281,89 +277,107 @@ fn step(
     }
 }
 
+fn read_transcript(path: &str) -> Result<String, String> {
+    std::fs::read(path)
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .map_err(|e| format!("Could not read {path}: {e}"))
+}
+
+fn write_file(path: &str, text: &str) -> Result<(), String> {
+    if let Some(dir) = Path::new(path).parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("Could not create {}: {e}", dir.display()))?;
+    }
+    std::fs::write(path, text).map_err(|e| format!("Could not write {path}: {e}"))
+}
+
 fn run(plan: &IndexPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool, report: &mut IndexReport) {
-    let script = |name: &str| Path::new(&plan.scripts_dir).join(name).to_string_lossy().into_owned();
-    let session = plan.session.to_string();
-    let mut chunker = vec![
-        script("transcript_to_chunks.py"),
-        "--campaign".into(),
-        plan.slug.clone(),
-        "--session".into(),
-        session.clone(),
-    ];
+    let log = |s: String| send(tx, PipelineEvent::Log(s));
+    let stage = |label: &str, fraction: f64| {
+        send(
+            tx,
+            PipelineEvent::Stage {
+                label: label.into(),
+                fraction,
+            },
+        )
+    };
+    // The campaign again, from disk, as this run's settings see it.
+    let settings = Settings::from_env_map(plan.env.clone(), "ttrpg-tui");
+    let campaign = match Campaign::load(&settings, &plan.slug) {
+        Ok(c) => c,
+        Err(e) => {
+            report.failure = Some(e.0);
+            return;
+        }
+    };
+    let raw = match read_transcript(&plan.transcript_md) {
+        Ok(r) => r,
+        Err(e) => {
+            report.failure = Some(e);
+            return;
+        }
+    };
     match plan.kind {
         IndexKind::Report => {
-            send(
-                tx,
-                PipelineEvent::Stage {
-                    label: "Scanning the transcript for alias candidates...".into(),
-                    fraction: 0.3,
-                },
+            stage("Scanning the transcript for alias candidates...", 0.3);
+            let dictionary = alias_report::load_dictionary(&alias_report::WORDLISTS);
+            let text = alias_report::alias_report(
+                &campaign,
+                plan.session,
+                &plan.transcript_md,
+                &raw,
+                alias_report::DEFAULT_THRESHOLD,
+                alias_report::DEFAULT_MIN_FREQ,
+                &dictionary,
             );
-            chunker.push("--report".into());
-            if !step(plan, tx, cancel, report, chunker, "The alias report", |_, _| {}) {
+            if let Err(e) = write_file(&plan.report_path, &text) {
+                report.failure = Some(e);
                 return;
             }
-            if !Path::new(&plan.report_path).is_file() {
+            log(format!("Alias candidate report written to {}", plan.report_path));
+            report.output = Some(plan.report_path.clone());
+            stage("Report ready", 1.0);
+        }
+        IndexKind::Index => {
+            stage("Chunking the transcript...", 0.1);
+            let run = chunker::chunk_transcript(&campaign, &raw, plan.session, &crate::timefmt::today_local());
+            log(run.summary(plan.session));
+            (report.chunks, report.utterances) = (Some(run.chunks), Some(run.utterances));
+            if run.chunks == 0 {
+                // Written anyway, as the original did, so the file is not stale.
+                let _ = write_file(&plan.chunks_path, "");
                 report.failure = Some(format!(
-                    "The report was not written: {} does not exist.",
-                    plan.report_path
+                    "The chunk file is empty: {}. Nothing to index; check that the transcript has speaker lines.",
+                    plan.chunks_path
                 ));
                 return;
             }
-            report.output = Some(plan.report_path.clone());
-            send(
-                tx,
-                PipelineEvent::Stage {
-                    label: "Report ready".into(),
-                    fraction: 1.0,
-                },
-            );
-        }
-        IndexKind::Index => {
-            send(
-                tx,
-                PipelineEvent::Stage {
-                    label: "Chunking the transcript...".into(),
-                    fraction: 0.1,
-                },
-            );
-            let ok = step(plan, tx, cancel, report, chunker, "Chunking", |line, r| {
-                if let Some((c, u)) = parse_chunk_summary(line) {
-                    (r.chunks, r.utterances) = (Some(c), Some(u));
-                }
-            });
-            if !ok {
+            if let Err(e) = write_file(&plan.chunks_path, &run.jsonl) {
+                report.failure = Some(e);
                 return;
             }
-            match std::fs::metadata(&plan.chunks_path) {
-                Ok(m) if m.len() > 0 && report.chunks != Some(0) => report.output = Some(plan.chunks_path.clone()),
-                Ok(_) => {
-                    report.failure = Some(format!(
-                        "The chunk file is empty: {}. Nothing to index; check that the transcript has speaker lines.",
-                        plan.chunks_path
-                    ));
-                    return;
-                }
-                Err(_) => {
-                    report.failure = Some(format!("The chunk file was not written: {}.", plan.chunks_path));
-                    return;
-                }
+            log(format!("Wrote {}", plan.chunks_path));
+            report.output = Some(plan.chunks_path.clone());
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                report.cancelled = true;
+                return;
             }
-            send(
-                tx,
-                PipelineEvent::Stage {
-                    label: "Embedding and storing (the first run loads the model, which takes a while)...".into(),
-                    fraction: 0.5,
-                },
+
+            stage(
+                "Embedding and storing (the first run loads the model, which takes a while)...",
+                0.5,
             );
+            let script = Path::new(&plan.scripts_dir)
+                .join("chroma_memory.py")
+                .to_string_lossy()
+                .into_owned();
             let ingest = vec![
-                script("chroma_memory.py"),
+                script,
                 "ingest".into(),
                 "--campaign".into(),
                 plan.slug.clone(),
                 "--session".into(),
-                session,
+                plan.session.to_string(),
             ];
             let ok = step(plan, tx, cancel, report, ingest, "Storing in ChromaDB", |line, r| {
                 if let Some((n, held)) = parse_upsert_summary(line) {
@@ -373,13 +387,7 @@ fn run(plan: &IndexPlan, tx: &Sender<PipelineEvent>, cancel: &AtomicBool, report
             if !ok {
                 return;
             }
-            send(
-                tx,
-                PipelineEvent::Stage {
-                    label: "Indexed".into(),
-                    fraction: 1.0,
-                },
-            );
+            stage("Indexed", 1.0);
         }
     }
 }
@@ -390,11 +398,6 @@ mod tests {
 
     #[test]
     fn the_helpers_summary_lines_are_read() {
-        assert_eq!(
-            parse_chunk_summary("3 chunks from 14 utterances (session 1); 2 alias rules applied"),
-            Some((3, 14))
-        );
-        assert_eq!(parse_chunk_summary("Wrote /x/s01_chunks.jsonl"), None);
         assert_eq!(
             parse_upsert_summary("Upserted 3 chunks into /home/a b/db. Collection now holds 7."),
             Some((3, 7))

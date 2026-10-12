@@ -3,7 +3,7 @@
 #
 # Builds a throwaway world, then opens the TUI on it:
 #   - an invented campaign (and a second one) in a vaults folder
-#   - a Downloads folder holding six tiny "Craig" tracks, one from a speaker the
+#   - a Downloads folder holding six short "Craig" tracks, one from a speaker the
 #     campaign does not know, so you can see the warning
 #   - a stand-in whisper-cli that waits a few seconds per track and writes canned dialogue
 #   - a stand-in for the Python that has ChromaDB, so Index and the alias report can be tried
@@ -25,11 +25,11 @@ keep=false
 [[ "${1:-}" == "--keep" ]] && keep=true
 
 missing=()
-for tool in bash python3 ffmpeg jq; do
+for tool in bash python3 ffmpeg; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
 done
 if ((${#missing[@]})); then
-    echo "The demo needs: ${missing[*]} (the real pipeline needs them too)." >&2
+    echo "The demo needs: ${missing[*]} (ffmpeg is the real pipeline's; bash and python3 run the stand-ins)." >&2
     exit 1
 fi
 
@@ -84,7 +84,7 @@ EOF
     [[ "${DEMO_FAIL:-}" == 1 ]] && names+=(failing_mic)
     for i in "${!names[@]}"; do
         n=$((i + 1))
-        ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=$((200 + 55 * n)):duration=3" \
+        ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=$((200 + 55 * n)):duration=150" \
             -ar 16000 -ac 1 "$demo/home/Downloads/${n}-${names[$i]}.flac"
     done
 fi

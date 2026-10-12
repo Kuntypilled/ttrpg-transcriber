@@ -1,0 +1,45 @@
+{
+  "campaign": "Edges fixture",
+  "aliases": {
+    "Dr. Vane": [
+      "Dr Vain",
+      "dr. vain"
+    ],
+    "O'Neil (Jr.)": [
+      "Oneil Jr"
+    ],
+    "A+B": [
+      "a+b"
+    ],
+    "Sky": [
+      "Skye"
+    ]
+  },
+  "players": {
+    "Mara_Quill": "Pat",
+    "Tomas_Ink": "Lee",
+    "Zed_Wick": "Kay"
+  },
+  "speaker_map": [
+    {
+      "match": "stranger",
+      "player": null,
+      "character": null
+    },
+    {
+      "match": "mara",
+      "player": "Pat",
+      "character": "Mara_Quill"
+    },
+    {
+      "match": "ma",
+      "player": "Other",
+      "character": "Zed_Wick"
+    },
+    {
+      "match": "tomas",
+      "player": "Lee",
+      "character": "Tomas_Ink"
+    }
+  ]
+}

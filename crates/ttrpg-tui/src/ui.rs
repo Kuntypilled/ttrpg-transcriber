@@ -653,15 +653,16 @@ fn draw_status(frame: &mut Frame, area: Rect, app: &App) {
 /// still work), so Help and Quit are always there.
 fn draw_buttons(frame: &mut Frame, area: Rect, app: &mut App) {
     // (key, label, action, drop order: 0 = never dropped, higher goes first)
-    let all: [(char, &str, Action, u8); 10] = [
+    let all: [(char, &str, Action, u8); 11] = [
         ('f', "Files", Action::ChooseFiles, 0),
         ('r', "Resolve", Action::Resolve, 3),
         ('s', "Start", Action::Start, 0),
         ('x', "Cancel", Action::Cancel, 0),
         ('i', "Index", Action::Index, 2),
-        ('a', "Report", Action::Report, 4),
-        ('o', "Open folder", Action::OpenFolder, 5),
-        ('c', "Clear files", Action::ClearFiles, 6),
+        ('p', "Rebuild", Action::Reprocess, 4),
+        ('a', "Report", Action::Report, 5),
+        ('o', "Open folder", Action::OpenFolder, 6),
+        ('c', "Clear files", Action::ClearFiles, 7),
         ('?', "Help", Action::Help, 0),
         ('q', "Quit", Action::Quit, 0),
     ];
